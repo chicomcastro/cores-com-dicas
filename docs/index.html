@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cores com Dicas — Jogo multiplayer local</title>
+  <meta name="description" content="Jogo web multiplayer local inspirado em Hues and Cues. Tablet vira tabuleiro, celulares viram controles. Sem internet, sem instalação." />
+  <meta property="og:title" content="Cores com Dicas" />
+  <meta property="og:description" content="Jogo web multiplayer local inspirado em Hues and Cues. Tablet vira tabuleiro, celulares viram controles." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1'%3E%3Cstop offset='0' stop-color='%23ff5e5e'/%3E%3Cstop offset='0.25' stop-color='%23ffb84a'/%3E%3Cstop offset='0.5' stop-color='%2362d36b'/%3E%3Cstop offset='0.75' stop-color='%235cb8ff'/%3E%3Cstop offset='1' stop-color='%23b478ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='20' fill='url(%23g)'/%3E%3C/svg%3E" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: #0e0f14;
+      color: #f4f5fa;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: #5cb8ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    h1, h2, h3 { line-height: 1.2; margin: 0 0 12px; }
+    p { margin: 0 0 12px; }
+    .gradient-text {
+      background: linear-gradient(90deg, #ff5e5e, #ffb84a, #62d36b, #5cb8ff, #b478ff);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+    /* ---------- NAV ---------- */
+    nav {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(14, 15, 20, 0.85);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      border-bottom: 1px solid #1b1d26;
+    }
+    nav .container {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 24px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; }
+    .brand-mark {
+      width: 28px; height: 28px; border-radius: 7px;
+      background: linear-gradient(135deg, #ff5e5e, #ffb84a, #62d36b, #5cb8ff, #b478ff);
+    }
+    .nav-links { display: flex; gap: 22px; font-size: 14px; }
+    .nav-links a { color: #cfd2dd; }
+    .nav-links a:hover { color: #fff; text-decoration: none; }
+    .gh-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: #1b1d26; border: 1px solid #2a2d3a; color: #fff;
+      padding: 8px 14px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    }
+    .gh-btn:hover { border-color: #5cb8ff; text-decoration: none; }
+    .gh-btn svg { width: 16px; height: 16px; }
+
+    /* ---------- HERO ---------- */
+    .hero {
+      position: relative;
+      padding: 80px 0 100px;
+      overflow: hidden;
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 60px;
+      align-items: center;
+    }
+    @media (max-width: 860px) {
+      .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+    }
+    .hero h1 {
+      font-size: clamp(40px, 6vw, 72px);
+      font-weight: 900;
+      letter-spacing: -1px;
+    }
+    .hero .lead {
+      font-size: 19px; color: #cfd2dd; max-width: 520px;
+    }
+    .hero-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 28px; }
+    .tag {
+      background: #1b1d26; border: 1px solid #2a2d3a;
+      padding: 6px 12px; border-radius: 999px;
+      font-size: 12px; color: #cfd2dd;
+    }
+    .cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 14px 22px; border-radius: 12px;
+      font-weight: 700; font-size: 15px;
+      transition: transform 0.1s ease;
+    }
+    .btn:hover { text-decoration: none; transform: translateY(-2px); }
+    .btn-primary {
+      background: linear-gradient(90deg, #5cb8ff, #b478ff);
+      color: #0e0f14;
+    }
+    .btn-secondary {
+      background: #1b1d26; border: 1px solid #2a2d3a; color: #fff;
+    }
+
+    /* Animated color grid in hero */
+    .preview {
+      position: relative;
+      aspect-ratio: 30 / 18;
+      background: #15171f;
+      border-radius: 16px;
+      padding: 8px;
+      box-shadow: 0 30px 80px -20px rgba(0,0,0,0.6), 0 0 0 1px #2a2d3a;
+    }
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(30, 1fr);
+      grid-template-rows: repeat(18, 1fr);
+      gap: 1.5px;
+      width: 100%; height: 100%;
+    }
+    .preview-grid > div { border-radius: 2px; }
+    .preview-grid > div.glow {
+      animation: cellGlow 2s ease-in-out infinite;
+      z-index: 2;
+    }
+    @keyframes cellGlow {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,255,255,0); outline: 2px solid transparent; }
+      50% { transform: scale(1.8); box-shadow: 0 0 14px 4px rgba(255,255,255,0.5); outline: 2px solid #fff; }
+    }
+    .preview-marker {
+      position: absolute;
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 2px solid #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+      z-index: 3;
+    }
+
+    /* ---------- SECTION ---------- */
+    section { padding: 80px 0; border-top: 1px solid #1b1d26; }
+    .section-title {
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 800; letter-spacing: -0.5px;
+      text-align: center; margin-bottom: 8px;
+    }
+    .section-sub { text-align: center; color: #9aa1b6; max-width: 600px; margin: 0 auto 50px; }
+
+    /* ---------- FEATURES ---------- */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 18px;
+    }
+    .feature {
+      background: #14161e;
+      border: 1px solid #1b1d26;
+      border-radius: 16px;
+      padding: 24px;
+      transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+    .feature:hover { border-color: #5cb8ff44; transform: translateY(-4px); }
+    .feature-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; margin-bottom: 14px;
+      background: linear-gradient(135deg, #5cb8ff22, #b478ff22);
+      border: 1px solid #5cb8ff44;
+    }
+    .feature h3 { font-size: 17px; }
+    .feature p { font-size: 14px; color: #cfd2dd; margin: 0; }
+
+    /* ---------- HOW IT WORKS ---------- */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      counter-reset: step;
+    }
+    .step {
+      background: #14161e; border: 1px solid #1b1d26;
+      border-radius: 16px; padding: 24px;
+      position: relative;
+      counter-increment: step;
+    }
+    .step::before {
+      content: counter(step);
+      position: absolute; top: -14px; left: 20px;
+      width: 32px; height: 32px; border-radius: 50%;
+      background: linear-gradient(135deg, #5cb8ff, #b478ff);
+      color: #0e0f14; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+    .step h3 { font-size: 16px; margin-top: 8px; }
+    .step p { font-size: 14px; color: #cfd2dd; margin: 0; }
+
+    /* ---------- DEVICES ---------- */
+    .devices {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 40px;
+      align-items: center;
+    }
+    @media (max-width: 860px) { .devices { grid-template-columns: 1fr; } }
+    .device-tablet, .device-phone {
+      border-radius: 22px;
+      overflow: hidden;
+      box-shadow: 0 30px 60px -20px rgba(0,0,0,0.6), 0 0 0 1px #2a2d3a;
+    }
+    .device-tablet {
+      aspect-ratio: 16/10;
+      background: #15171f;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: 1.4fr 0.6fr;
+      gap: 10px;
+    }
+    .device-phone {
+      max-width: 280px;
+      margin: 0 auto;
+      aspect-ratio: 9/16;
+      padding: 16px;
+      background: #15171f;
+      display: flex; flex-direction: column;
+      gap: 10px;
+    }
+    .phone-color {
+      flex: 1;
+      border-radius: 12px;
+      background: hsl(208, 80%, 55%);
+      animation: phoneHue 12s linear infinite;
+    }
+    @keyframes phoneHue {
+      0% { background: hsl(0, 80%, 55%); }
+      33% { background: hsl(140, 70%, 50%); }
+      66% { background: hsl(260, 70%, 60%); }
+      100% { background: hsl(360, 80%, 55%); }
+    }
+    .phone-input {
+      background: #1b1d26; border: 1px solid #2a2d3a;
+      border-radius: 10px; padding: 10px 12px;
+      font-size: 13px; color: #cfd2dd;
+    }
+    .phone-btn {
+      background: linear-gradient(90deg, #5cb8ff, #b478ff);
+      color: #0e0f14;
+      border-radius: 10px; padding: 10px;
+      text-align: center; font-weight: 700; font-size: 13px;
+    }
+
+    /* ---------- SETUP ---------- */
+    .setup-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 40px;
+    }
+    @media (max-width: 760px) { .setup-grid { grid-template-columns: 1fr; } }
+    pre {
+      background: #1b1d26;
+      border: 1px solid #2a2d3a;
+      border-radius: 12px;
+      padding: 18px;
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #cfd2dd;
+    }
+    pre .c { color: #6c7080; }
+    pre .k { color: #b478ff; }
+    pre .s { color: #62d36b; }
+
+    /* ---------- SCORING ---------- */
+    .score-rules {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px; margin-top: 30px;
+    }
+    .rule {
+      background: #14161e; border: 1px solid #1b1d26;
+      border-radius: 14px; padding: 20px;
+      text-align: center;
+    }
+    .rule .pts {
+      font-size: 36px; font-weight: 900;
+      background: linear-gradient(90deg, #5cb8ff, #b478ff);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .rule p { font-size: 13px; color: #cfd2dd; margin: 4px 0 0; }
+
+    /* ---------- FOOTER ---------- */
+    footer {
+      padding: 40px 0;
+      border-top: 1px solid #1b1d26;
+      text-align: center;
+      color: #6c7080;
+      font-size: 13px;
+    }
+    footer a { color: #9aa1b6; }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="container">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <span>Cores com Dicas</span>
+      </div>
+      <div class="nav-links">
+        <a href="#features">Recursos</a>
+        <a href="#how">Como funciona</a>
+        <a href="#setup">Instalação</a>
+      </div>
+      <a class="gh-btn" href="https://github.com/chicomcastro/cores-com-dicas" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.9 1.2 1.9 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></svg>
+        GitHub
+      </a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container hero-grid">
+      <div>
+        <h1>Cores com <span class="gradient-text">Dicas</span></h1>
+        <p class="lead">
+          Jogo web multiplayer local inspirado em <em>Hues and Cues</em>.
+          Use um tablet como tabuleiro central e os celulares como controles.
+          Sem instalação, sem internet — só Wi-Fi local e diversão.
+        </p>
+        <div class="hero-tags">
+          <span class="tag">3 a 10 jogadores</span>
+          <span class="tag">~15 min</span>
+          <span class="tag">Wi-Fi local</span>
+          <span class="tag">Open source</span>
+        </div>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://github.com/chicomcastro/cores-com-dicas" target="_blank" rel="noopener">Ver no GitHub →</a>
+          <a class="btn btn-secondary" href="#setup">Como rodar</a>
+        </div>
+      </div>
+      <div class="preview">
+        <div class="preview-grid" id="preview-grid"></div>
+        <div class="preview-marker" id="m1" style="background:#e63946; left:30%; top:40%;"></div>
+        <div class="preview-marker" id="m2" style="background:#2a9d8f; left:48%; top:55%;"></div>
+        <div class="preview-marker" id="m3" style="background:#f4a261; left:55%; top:42%;"></div>
+      </div>
+    </div>
+  </header>
+
+  <section id="features">
+    <div class="container">
+      <h2 class="section-title">Construído para a mesa do jantar</h2>
+      <p class="section-sub">
+        Estado 100% no servidor, validações server-side, comunicação em tempo real via WebSocket.
+      </p>
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">📱</div>
+          <h3>Mestre / Cliente</h3>
+          <p>Tablet roda o tabuleiro em tela cheia; cada celular vê só o que o jogador precisa ver.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">⚡</div>
+          <h3>Tempo real</h3>
+          <p>Socket.IO sincroniza dicas, marcadores e pontuação em todas as telas instantaneamente.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">📶</div>
+          <h3>Sem internet</h3>
+          <p>Tudo roda em rede Wi-Fi local. Funciona em casa, no acampamento ou em qualquer lugar.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🎨</div>
+          <h3>540 cores únicas</h3>
+          <p>Grid HSL 30×18 cobrindo todo o espectro, com cantos em tons neutros para os extremos.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🔒</div>
+          <h3>Validação no servidor</h3>
+          <p>Dicas com nomes de cor são bloqueadas; toda transição de fase é gerenciada pelo backend.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🪶</div>
+          <h3>Stack mínima</h3>
+          <p>Node.js + Express + Socket.IO. Front em HTML/CSS/JS puros. Sem build, sem framework.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="container">
+      <h2 class="section-title">Como funciona</h2>
+      <p class="section-sub">Quatro fases por turno, repetidas até todos terem dado uma dica.</p>
+      <div class="steps">
+        <div class="step">
+          <h3>Cor secreta</h3>
+          <p>O servidor sorteia uma cor do grid e envia só para o celular do jogador da vez.</p>
+        </div>
+        <div class="step">
+          <h3>1ª dica (1 palavra)</h3>
+          <p>O jogador da vez digita uma palavra. Os outros tocam no tablet para colocar seu marcador.</p>
+        </div>
+        <div class="step">
+          <h3>2ª dica (até 2)</h3>
+          <p>Mais uma dica e os jogadores podem mover seu marcador ou adicionar um segundo.</p>
+        </div>
+        <div class="step">
+          <h3>Revelação</h3>
+          <p>A cor secreta pulsa no tabuleiro. Pontos sobem na pontuação e o próximo jogador entra.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2 class="section-title">Pontuação</h2>
+      <p class="section-sub">Quanto mais perto da cor certa, mais pontos.</p>
+      <div class="score-rules">
+        <div class="rule"><div class="pts">3</div><p>Acerto exato na célula</p></div>
+        <div class="rule"><div class="pts">2</div><p>Dentro do quadrado 3×3</p></div>
+        <div class="rule"><div class="pts">1</div><p>Dentro do 5×5 externo</p></div>
+        <div class="rule"><div class="pts">+1</div><p>Para o dador, por marcador no 3×3 (máx. 9)</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2 class="section-title">Dois dispositivos, um jogo</h2>
+      <p class="section-sub">Layouts otimizados para tablet em landscape e celular em portrait.</p>
+      <div class="devices">
+        <div class="device-tablet">
+          <div class="preview-grid" id="preview-grid-2" style="border-radius: 8px; overflow: hidden;"></div>
+          <div style="background:#1b1d26; border-radius:8px; padding:14px; display:flex; flex-direction:column; gap:10px; font-size:11px;">
+            <div style="opacity:0.6; text-transform:uppercase; letter-spacing:1px;">Vez de</div>
+            <div style="font-size:18px; font-weight:800; color:#5cb8ff;">Maria</div>
+            <div style="background:#0e0f14; border-radius:6px; padding:8px;"><strong>Dica:</strong> oceano</div>
+            <div style="margin-top:auto; opacity:0.7;">João: 5 pts<br/>Ana: 3 pts<br/>Maria: 2 pts</div>
+          </div>
+        </div>
+        <div class="device-phone">
+          <div class="phone-color"></div>
+          <div style="font-size:11px; opacity:0.6; text-align:center; letter-spacing:1px;">SUA COR SECRETA</div>
+          <div class="phone-input">oceano</div>
+          <div class="phone-btn">Enviar Dica</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="setup">
+    <div class="container">
+      <h2 class="section-title">Coloque para rodar</h2>
+      <p class="section-sub">Pré-requisito: Node.js 18 ou superior.</p>
+      <div class="setup-grid">
+        <div>
+          <h3>1. Instale e inicie</h3>
+          <pre><span class="c"># clone o repositório</span>
+<span class="k">git clone</span> https://github.com/chicomcastro/cores-com-dicas
+<span class="k">cd</span> cores-com-dicas
+
+<span class="c"># instale dependências</span>
+<span class="k">npm</span> install
+
+<span class="c"># inicie o servidor</span>
+<span class="k">npm</span> start</pre>
+        </div>
+        <div>
+          <h3>2. Conecte e jogue</h3>
+          <pre><span class="c"># Tablet (tabuleiro)</span>
+http://&lt;ip-local&gt;:<span class="s">3000</span>/board
+
+<span class="c"># Celular (jogador) — escaneie</span>
+<span class="c"># o QR code do tablet ou abra:</span>
+http://&lt;ip-local&gt;:<span class="s">3000</span>/player
+
+<span class="c"># Todos na mesma rede Wi-Fi.</span>
+<span class="c"># Sem internet necessária.</span></pre>
+        </div>
+      </div>
+      <div style="margin-top: 32px; text-align: center;">
+        <a class="btn btn-primary" href="https://github.com/chicomcastro/cores-com-dicas" target="_blank" rel="noopener">Abrir repositório no GitHub →</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      Feito com ☕ &middot;
+      <a href="https://github.com/chicomcastro/cores-com-dicas" target="_blank" rel="noopener">cores-com-dicas no GitHub</a>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      const COLS = 30, ROWS = 18;
+      function buildGrid(el) {
+        const frag = document.createDocumentFragment();
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const hue = (c / COLS) * 360;
+            const tRow = r / (ROWS - 1);
+            const lightness = 95 - tRow * 87;
+            const dist = Math.abs(tRow - 0.5) * 2;
+            const sat = Math.max(0, 95 - Math.pow(dist, 1.4) * 80);
+            const div = document.createElement('div');
+            div.style.background = `hsl(${hue}, ${sat}%, ${lightness}%)`;
+            frag.appendChild(div);
+          }
+        }
+        el.appendChild(frag);
+        return el.children;
+      }
+      const cells = buildGrid(document.getElementById('preview-grid'));
+      buildGrid(document.getElementById('preview-grid-2'));
+
+      let glowIdx = -1;
+      function pickGlow() {
+        if (glowIdx >= 0 && cells[glowIdx]) cells[glowIdx].classList.remove('glow');
+        const c = 8 + Math.floor(Math.random() * 14);
+        const r = 4 + Math.floor(Math.random() * 10);
+        glowIdx = r * COLS + c;
+        if (cells[glowIdx]) cells[glowIdx].classList.add('glow');
+        // Move markers near glow
+        const colW = 100 / COLS, rowH = 100 / ROWS;
+        document.getElementById('m1').style.left = `${(c - 2) * colW + colW / 2}%`;
+        document.getElementById('m1').style.top = `${(r - 1) * rowH + rowH / 2}%`;
+        document.getElementById('m2').style.left = `${(c + 1) * colW + colW / 2}%`;
+        document.getElementById('m2').style.top = `${(r + 2) * rowH + rowH / 2}%`;
+        document.getElementById('m3').style.left = `${(c - 1) * colW + colW / 2}%`;
+        document.getElementById('m3').style.top = `${(r + 1) * rowH + rowH / 2}%`;
+      }
+      pickGlow();
+      setInterval(pickGlow, 4000);
+    })();
+  </script>
+</body>
+</html>
