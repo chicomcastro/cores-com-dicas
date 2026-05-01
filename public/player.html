@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e0f14" />
+  <title>Cores com Dicas — Jogador</title>
+  <link rel="stylesheet" href="/css/player.css" />
+</head>
+<body>
+  <main id="app">
+    <!-- LOGIN -->
+    <section id="login" class="screen active">
+      <div class="login-inner">
+        <h1>Cores com Dicas</h1>
+        <p class="subtitle">Selecione seu nome para entrar</p>
+        <ul id="login-names" class="login-names"></ul>
+        <p id="login-empty" class="hint hidden">Adicione seu nome no tablet primeiro.</p>
+        <p id="login-status" class="hint"></p>
+      </div>
+    </section>
+
+    <!-- WAITING (lobby joined) -->
+    <section id="waiting" class="screen">
+      <div class="center-card">
+        <div class="badge" id="waiting-badge">Aguardando início</div>
+        <h2 id="waiting-title">Olá, <span id="waiting-name">jogador</span>!</h2>
+        <p class="hint">O tabuleiro vai começar quando todos estiverem prontos.</p>
+        <div class="connected-dots" id="connected-dots"></div>
+      </div>
+    </section>
+
+    <!-- ACTIVE: SECRET COLOR -->
+    <section id="secret" class="screen">
+      <div id="secret-color" class="secret-color">
+        <div class="secret-meta">
+          <div class="secret-tag">Sua cor secreta</div>
+          <div class="secret-id" id="secret-id">—</div>
+        </div>
+      </div>
+      <div class="clue-form">
+        <label id="clue-label">Dê a 1ª dica (1 palavra):</label>
+        <input id="clue-input" type="text" placeholder="ex: oceano" autocomplete="off" autocapitalize="off" autocorrect="off" />
+        <button id="clue-send" class="primary big">Enviar Dica</button>
+        <p id="clue-error" class="error"></p>
+      </div>
+    </section>
+
+    <!-- WAITING TURN (other player active) -->
+    <section id="wait-turn" class="screen">
+      <div class="center-card">
+        <div class="badge">Aguarde sua vez</div>
+        <h2>Vez de <span id="wt-active">—</span></h2>
+        <div id="wt-clue-block">
+          <div class="clue-line"><span class="clue-tag">1</span><span id="wt-clue-1">—</span></div>
+          <div class="clue-line"><span class="clue-tag">2</span><span id="wt-clue-2">—</span></div>
+        </div>
+        <p id="wt-hint" class="hint"></p>
+      </div>
+    </section>
+
+    <!-- PLACE MARKER ON TABLET -->
+    <section id="place-tablet" class="screen">
+      <div class="center-card">
+        <div class="badge">Sua vez de marcar</div>
+        <h2>Vá até o tablet</h2>
+        <p class="hint" id="place-hint">Toque na cor que você acha que é a cor secreta.</p>
+        <div class="big-arrow">📲 ➜ 🖥️</div>
+      </div>
+    </section>
+
+    <!-- REVEAL / SCORES -->
+    <section id="reveal" class="screen">
+      <div class="center-card">
+        <div class="badge">Rodada encerrada</div>
+        <div class="score-big" id="score-big">+0</div>
+        <p class="hint">Pontos nesta rodada</p>
+        <div class="total-score">Total: <strong id="total-score">0</strong></div>
+        <p class="hint" id="reveal-hint">Aguarde a próxima rodada…</p>
+      </div>
+    </section>
+
+    <!-- GAME OVER -->
+    <section id="end" class="screen">
+      <div class="center-card">
+        <h2 id="end-title">Fim de Jogo</h2>
+        <div class="score-big" id="end-score">0</div>
+        <p class="hint" id="end-rank"></p>
+        <p class="hint">Confira o placar final no tablet.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/player.js"></script>
+</body>
+</html>

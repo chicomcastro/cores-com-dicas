@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1280, initial-scale=1, user-scalable=no" />
+  <title>Cores com Dicas — Tabuleiro</title>
+  <link rel="stylesheet" href="/css/board.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- LOBBY -->
+    <section id="lobby" class="screen">
+      <div class="lobby-grid">
+        <div class="lobby-left">
+          <h1>Cores com Dicas</h1>
+          <p class="subtitle">Adicione os jogadores (3 a 10) e inicie a partida.</p>
+
+          <div class="add-player">
+            <input id="player-name-input" type="text" placeholder="Nome do jogador" maxlength="14" />
+            <button id="add-player-btn">+ Adicionar</button>
+          </div>
+
+          <ul id="lobby-players" class="lobby-players"></ul>
+
+          <button id="start-btn" class="primary big" disabled>Iniciar Jogo</button>
+          <p id="lobby-help" class="hint"></p>
+        </div>
+
+        <div class="lobby-right">
+          <h2>Conecte os celulares</h2>
+          <p class="hint">Aponte o QR Code com a câmera ou abra o link abaixo na mesma rede Wi-Fi.</p>
+          <div id="qr-wrap"><img id="qr-img" alt="QR Code" /></div>
+          <p id="qr-url" class="qr-url"></p>
+          <div class="connected-list">
+            <h3>Conectados</h3>
+            <ul id="connected-players"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- GAME -->
+    <section id="game" class="screen hidden">
+      <div class="board-area">
+        <div id="board-grid" class="board-grid"></div>
+      </div>
+      <aside class="sidebar">
+        <header class="round-header">
+          <div class="round-label">Rodada <span id="round-num">1</span>/<span id="round-total">2</span></div>
+          <div class="turn-label">Turno <span id="turn-num">1</span>/<span id="turn-total">6</span></div>
+        </header>
+
+        <div class="active-card">
+          <div class="active-label">Vez de</div>
+          <div class="active-name" id="active-name">—</div>
+        </div>
+
+        <div class="phase-card" id="phase-card">
+          <div class="phase-title" id="phase-title">Aguardando dica…</div>
+          <div class="phase-desc" id="phase-desc"></div>
+        </div>
+
+        <div class="clues">
+          <div class="clue-row"><span class="clue-tag">1</span><span id="clue-1" class="clue-text">—</span></div>
+          <div class="clue-row"><span class="clue-tag">2</span><span id="clue-2" class="clue-text">—</span></div>
+        </div>
+
+        <div class="placing-banner hidden" id="placing-banner">
+          <div class="placing-label">Coloque o marcador de</div>
+          <div class="placing-name" id="placing-name">—</div>
+          <div class="placing-hint" id="placing-hint"></div>
+          <div class="placing-choice hidden" id="placing-choice">
+            <button class="choice-btn active" data-mi="2">+ Adicionar 2º</button>
+            <button class="choice-btn" data-mi="1">↻ Mover 1º</button>
+          </div>
+        </div>
+
+        <div class="scoreboard">
+          <h3>Pontuação</h3>
+          <ul id="scoreboard"></ul>
+        </div>
+
+        <div class="actions">
+          <button id="next-round-btn" class="primary hidden">Próxima Rodada ▶</button>
+          <button id="play-again-btn" class="primary hidden">Jogar Novamente</button>
+        </div>
+      </aside>
+    </section>
+
+    <!-- END SCREEN -->
+    <section id="end" class="screen hidden">
+      <canvas id="confetti"></canvas>
+      <div class="end-card">
+        <h1>Fim de Jogo!</h1>
+        <div class="winner" id="winner-name">—</div>
+        <ol id="final-scores" class="final-scores"></ol>
+        <button id="end-play-again-btn" class="primary big">Jogar Novamente</button>
+      </div>
+    </section>
+
+    <div id="toasts" class="toasts"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/colors.js"></script>
+  <script src="/js/board.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "cores-com-dicas",
+  "version": "1.0.0",
+  "description": "Jogo web multiplayer local de Cores com Dicas (Hues and Cues)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["hues-and-cues", "color-game", "multiplayer", "socket.io"],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "qrcode": "^1.5.3"
+  }
+}
