@@ -1,8 +1,8 @@
 # Cores com Dicas
 
-Jogo web multiplayer local inspirado em **Hues and Cues**, com arquitetura
-mestre/cliente: um tablet funciona como tabuleiro central e cada jogador usa o
-celular para ver sua cor secreta e enviar palpites.
+Jogo web multiplayer local inspirado em **Hues and Cues**. Um tablet funciona
+como tabuleiro central e cada jogador usa o próprio dispositivo para ver sua cor
+secreta e enviar dicas.
 
 ## Como rodar
 
@@ -14,32 +14,42 @@ npm start
 ```
 
 O servidor abre na porta `3000`. Conecte todos os dispositivos à mesma rede
-Wi-Fi (não precisa de internet).
+(não precisa de internet).
 
-- **Tablet (tabuleiro):** `http://<ip-local>:3000/board`
-- **Celular (jogador):** `http://<ip-local>:3000/player`
-
-A tela do tablet exibe um QR Code apontando para a URL dos jogadores.
+- **Tabuleiro (tablet/desktop):** `http://<ip-local>:3000`
+- **Jogador (celular/qualquer dispositivo):** escaneie o QR Code exibido no tabuleiro ou abra `http://<ip-local>:3000/player`
 
 ## Como jogar
 
-1. No tablet, adicione os nomes dos jogadores (3 a 10) e clique em
-   **Iniciar Jogo**.
-2. Cada celular acessa `/player`, vê a lista de nomes e seleciona o seu.
+1. Os jogadores abrem o link ou escaneiam o QR Code e digitam seus nomes (2 a 10).
+2. No tabuleiro, escolha o tamanho do grid (Fácil 15×9, Médio 20×12, Difícil 30×18) e clique em **Iniciar Jogo**.
 3. O jogo sorteia uma cor secreta para o jogador da vez. Ele dá uma dica de
    1 palavra (e depois uma de até 2 palavras).
-4. Os outros jogadores tocam no tablet para colocar marcadores na cor que
-   acham ser a secreta.
-5. A revelação anima a cor correta no grid e calcula os pontos:
-   - Acerto exato: 3 pts
-   - Quadrado 3×3 ao redor: 2 pts
-   - Quadrado 5×5 externo: 1 pt
-   - Dica: +1 por marcador dentro do 3×3 (máx. 9)
-6. O jogo dura 2 rodadas (4–6 jogadores) ou 1 rodada (7+).
+4. Os outros jogadores vão até o tabuleiro e tocam na cor que acham ser a secreta.
+5. A cor correta é revelada e os pontos são calculados:
+
+| Zona | Pontos |
+|------|--------|
+| Acerto exato | 3 pts |
+| Quadrado 3×3 ao redor | 2 pts |
+| Quadrado 5×5 externo | 1 pt |
+| Dica: por marcador no 3×3 | +1 pt (máx. 9) |
+
+6. O jogo dura 2 rodadas (2–6 jogadores) ou 1 rodada (7+).
 
 ## Stack
 
-- Node.js + Express + Socket.IO
-- HTML/CSS/JS puros no front (sem framework)
-- `qrcode` para gerar o QR Code
-- Estado em memória, totalmente no servidor
+- **Server:** Node.js + Express + Socket.IO
+- **Front:** HTML / CSS / JS puros (sem framework, sem build)
+- **QR Code:** `qrcode` (npm)
+- **Estado:** 100% no servidor, validações server-side
+- **Tema:** dark warm pastel com fonte Nunito
+
+## Recursos
+
+- Lobby com auto-registro — jogadores entram pelo próprio dispositivo
+- QR Code gerado automaticamente com IP da rede local
+- Grid configurável em 3 tamanhos
+- Layout responsivo para tablet (portrait e landscape) e celular
+- Animações e transições suaves
+- Reconexão automática e proteção contra multi-tab
