@@ -1,8 +1,10 @@
 (function () {
   const socket = io();
-  const { COLS, ROWS, generateBoard, cellHsl, chebyshev } = window.GameColors;
+  const { generateBoard, cellHsl, chebyshev } = window.GameColors;
 
-  const cells = generateBoard();
+  let cells = [];
+  let currentCols = 0;
+  let currentRows = 0;
   let state = null;
   let cellEls = [];
   let placingPlayerName = null;
@@ -15,17 +17,16 @@
   const connectedListEl = $('connected-players');
   const startBtn = $('start-btn');
   const lobbyHelp = $('lobby-help');
-  const playerNameInput = $('player-name-input');
-  const addPlayerBtn = $('add-player-btn');
-  let localLobby = [];
 
   function renderLobby() {
+    if (!state) return;
+    const names = state.lobbyPlayers || [];
+    const conn = state.lobbyConnected || {};
     lobbyPlayersEl.innerHTML = '';
-    const conn = state?.lobbyConnected || {};
-    localLobby.forEach((name, i) => {
+    names.forEach((name, i) => {
       const li = document.createElement('li');
+      li.style.setProperty('--player-color', PLAYER_COLOR(i));
       li.innerHTML = `
-        <span class="swatch" style="background:${PLAYER_COLOR(i)}"></span>
         <span class="name">${escapeHtml(name)}</span>
         <span class="conn-dot ${conn[name] ? 'on' : ''}"></span>
         <button class="remove" data-name="${escapeHtml(name)}">✕</button>
@@ -34,19 +35,18 @@
     });
     lobbyPlayersEl.querySelectorAll('.remove').forEach(btn => {
       btn.addEventListener('click', () => {
-        localLobby = localLobby.filter(n => n !== btn.dataset.name);
-        emitLobbyUpdate();
+        socket.emit('kick_player', { playerName: btn.dataset.name });
       });
     });
-    const enough = localLobby.length >= 3 && localLobby.length <= 10;
+    const enough = names.length >= 2 && names.length <= 10;
     startBtn.disabled = !enough;
-    if (localLobby.length < 3) lobbyHelp.textContent = `Faltam ${3 - localLobby.length} jogador(es).`;
-    else if (localLobby.length > 10) lobbyHelp.textContent = 'Máximo 10 jogadores.';
+    if (names.length < 2) lobbyHelp.textContent = `Faltam ${2 - names.length} jogador(es).`;
+    else if (names.length > 10) lobbyHelp.textContent = 'Máximo 10 jogadores.';
     else lobbyHelp.textContent = 'Pronto para iniciar!';
   }
 
   function PLAYER_COLOR(i) {
-    const palette = ['#e63946', '#1d3557', '#2a9d8f', '#f4a261', '#7209b7', '#06aed5', '#80b918', '#ff006e', '#3a86ff', '#fb8500'];
+    const palette = ['#e63946', '#4a90d9', '#2a9d8f', '#f4a261', '#7209b7', '#06aed5', '#80b918', '#ff006e', '#3a86ff', '#fb8500'];
     return palette[i % palette.length];
   }
 
@@ -54,25 +54,33 @@
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  function emitLobbyUpdate() {
-    socket.emit('lobby_update', { players: localLobby });
-    renderLobby();
-  }
+  const GRID_PRESETS = [
+    { label: 'Fácil (15×9)',    cols: 15, rows: 9  },
+    { label: 'Médio (20×12)',   cols: 20, rows: 12 },
+    { label: 'Difícil (30×18)', cols: 30, rows: 18 },
+  ];
+  let selectedPreset = 1;
 
-  function addPlayerFromInput() {
-    const v = playerNameInput.value.trim();
-    if (!v) return;
-    if (localLobby.includes(v)) { playerNameInput.value = ''; return; }
-    if (localLobby.length >= 10) return;
-    localLobby.push(v);
-    playerNameInput.value = '';
-    emitLobbyUpdate();
+  const gridSizeOptions = $('grid-size-options');
+  function renderGridPresets() {
+    gridSizeOptions.innerHTML = '';
+    GRID_PRESETS.forEach((p, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'grid-size-btn' + (i === selectedPreset ? ' active' : '');
+      btn.textContent = p.label;
+      btn.addEventListener('click', () => { selectedPreset = i; renderGridPresets(); });
+      gridSizeOptions.appendChild(btn);
+    });
   }
+  renderGridPresets();
 
-  addPlayerBtn.addEventListener('click', addPlayerFromInput);
-  playerNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addPlayerFromInput(); });
   startBtn.addEventListener('click', () => {
-    socket.emit('start_game', { players: localLobby });
+    const preset = GRID_PRESETS[selectedPreset];
+    socket.emit('start_game', {
+      players: state?.lobbyPlayers || [],
+      cols: preset.cols,
+      rows: preset.rows
+    });
   });
 
   function renderConnected() {
@@ -82,7 +90,8 @@
     state.lobbyPlayers.forEach((name, i) => {
       if (!conn[name]) return;
       const li = document.createElement('li');
-      li.innerHTML = `<span class="swatch" style="background:${PLAYER_COLOR(i)}; width:10px; height:10px; border-radius:50%; display:inline-block;"></span><span>${escapeHtml(name)}</span>`;
+      li.style.borderLeft = `3px solid ${PLAYER_COLOR(i)}`;
+      li.innerHTML = `<span>${escapeHtml(name)}</span>`;
       connectedListEl.appendChild(li);
     });
   }
@@ -96,9 +105,16 @@
   /* ---------- BOARD GRID ---------- */
   const boardGrid = $('board-grid');
   function buildBoard() {
+    const cols = state ? state.boardCols : 30;
+    const rows = state ? state.boardRows : 18;
+    cells = generateBoard(cols, rows);
+    currentCols = cols;
+    currentRows = rows;
     boardGrid.innerHTML = '';
+    boardGrid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    boardGrid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
     cellEls = [];
-    cells.forEach((c, idx) => {
+    cells.forEach((c) => {
       const div = document.createElement('div');
       div.className = 'cell';
       div.style.background = cellHsl(c);
@@ -112,7 +128,7 @@
   }
 
   function cellEl(col, row) {
-    return cellEls[row * COLS + col];
+    return cellEls[row * currentCols + col];
   }
 
   function onCellClick(c) {
@@ -222,8 +238,8 @@
         phaseDesc.textContent = `${state.activeName} está pensando…`;
         break;
       case 'markers1':
-        phaseTitle.textContent = 'Coloquem os marcadores';
-        phaseDesc.textContent = 'Toque no tablet para marcar onde acham que é a cor.';
+        phaseTitle.textContent = 'Hora de marcar';
+        phaseDesc.textContent = 'Cada jogador toca no tabuleiro onde acha que é a cor.';
         showPlacingBanner(1);
         break;
       case 'clue2':
@@ -231,8 +247,8 @@
         phaseDesc.textContent = `${state.activeName} está pensando…`;
         break;
       case 'markers2':
-        phaseTitle.textContent = 'Coloquem o segundo marcador';
-        phaseDesc.textContent = 'Toque no tablet para mover ou adicionar o marcador.';
+        phaseTitle.textContent = 'Segunda marcação';
+        phaseDesc.textContent = 'Mova seu marcador ou adicione um segundo.';
         showPlacingBanner(2);
         break;
       case 'reveal':
@@ -264,7 +280,7 @@
     placingNameEl.style.color = player?.color || '#fff';
     placingHintEl.textContent = round === 1
       ? 'Toque na cor que acha ser a secreta.'
-      : 'Adicione um 2º marcador ou mova o 1º.';
+      : 'Toque para mover ou adicionar marcador.';
     if (round === 2) {
       placingChoiceEl.classList.remove('hidden');
       syncChoiceButtons();
@@ -279,10 +295,11 @@
     state.players.forEach((p, i) => {
       const li = document.createElement('li');
       if (i === state.activeIdx) li.classList.add('active');
+      li.style.borderLeftColor = p.color;
       const delta = state.roundScores ? state.roundScores[p.name] || 0 : null;
       li.innerHTML = `
-        <span class="swatch" style="background:${p.color}"></span>
         <span class="name">${escapeHtml(p.name)}</span>
+        <span class="conn-dot ${p.connected ? 'on' : ''}"></span>
         ${delta != null && state.phase === 'reveal' ? `<span class="delta">+${delta}</span>` : ''}
         <span class="total">${p.score}</span>
       `;
@@ -362,9 +379,9 @@
     list.innerHTML = '';
     (state.finalScores || []).forEach((p, i) => {
       const li = document.createElement('li');
+      li.style.borderLeftColor = p.color;
       li.innerHTML = `
         <span class="rank">#${i + 1}</span>
-        <span class="swatch" style="background:${p.color}"></span>
         <span class="name">${escapeHtml(p.name)}</span>
         <span class="score">${p.score}</span>
       `;
@@ -378,6 +395,9 @@
   nextRoundBtn.addEventListener('click', () => socket.emit('next_round'));
   playAgainBtn.addEventListener('click', () => socket.emit('reset_game'));
   $('end-play-again-btn').addEventListener('click', () => socket.emit('reset_game'));
+  $('stop-game-btn').addEventListener('click', () => {
+    if (confirm('Tem certeza que quer encerrar o jogo?')) socket.emit('reset_game');
+  });
 
   /* ---------- SOCKET ---------- */
   socket.on('connect', () => socket.emit('hello_board'));
@@ -387,10 +407,6 @@
     state = s;
 
     if (s.status === 'lobby') {
-      // sync local lobby with server
-      if (JSON.stringify(localLobby) !== JSON.stringify(s.lobbyPlayers)) {
-        localLobby = [...s.lobbyPlayers];
-      }
       renderLobby();
       renderConnected();
       showScreen('lobby');
@@ -398,7 +414,7 @@
       return;
     }
     if (s.status === 'playing') {
-      if (boardGrid.children.length === 0) buildBoard();
+      if (boardGrid.children.length === 0 || currentCols !== s.boardCols || currentRows !== s.boardRows) buildBoard();
       showScreen('game');
       stopConfetti();
       renderPhase();
@@ -422,7 +438,4 @@
   });
 
   socket.on('start_rejected', (d) => toast(d?.reason || 'Não foi possível iniciar.'));
-
-  // Build at first
-  buildBoard();
 })();

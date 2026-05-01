@@ -2,18 +2,20 @@
   const COLS = 30;
   const ROWS = 18;
 
-  function generateBoard() {
+  function generateBoard(cols, rows) {
+    cols = cols || COLS;
+    rows = rows || ROWS;
     const cells = [];
-    for (let row = 0; row < ROWS; row++) {
-      for (let col = 0; col < COLS; col++) {
-        const hue = (col / COLS) * 360;
-        const tRow = ROWS === 1 ? 0 : row / (ROWS - 1);
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const hue = (col / cols) * 360;
+        const tRow = rows === 1 ? 0 : row / (rows - 1);
 
-        const lightness = 95 - tRow * 87;
+        const lightness = 85 - tRow * 65;
 
         const distFromMid = Math.abs(tRow - 0.5) * 2;
-        let saturation = 95 - Math.pow(distFromMid, 1.4) * 80;
-        saturation = Math.max(0, Math.min(100, saturation));
+        let saturation = 100 - Math.pow(distFromMid, 1.6) * 55;
+        saturation = Math.max(20, Math.min(100, saturation));
 
         cells.push({
           col,

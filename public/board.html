@@ -2,9 +2,13 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=1280, initial-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <title>Cores com Dicas — Tabuleiro</title>
-  <link rel="stylesheet" href="/css/board.css" />
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/board.css?v=__BUILD__" />
 </head>
 <body>
   <div id="app">
@@ -13,22 +17,22 @@
       <div class="lobby-grid">
         <div class="lobby-left">
           <h1>Cores com Dicas</h1>
-          <p class="subtitle">Adicione os jogadores (3 a 10) e inicie a partida.</p>
-
-          <div class="add-player">
-            <input id="player-name-input" type="text" placeholder="Nome do jogador" maxlength="14" />
-            <button id="add-player-btn">+ Adicionar</button>
-          </div>
+          <p class="subtitle">Jogadores entram pelo link ou QR Code (2 a 10).</p>
 
           <ul id="lobby-players" class="lobby-players"></ul>
+
+          <div class="grid-size-selector">
+            <label class="hint">Tamanho do tabuleiro:</label>
+            <div id="grid-size-options" class="grid-size-options"></div>
+          </div>
 
           <button id="start-btn" class="primary big" disabled>Iniciar Jogo</button>
           <p id="lobby-help" class="hint"></p>
         </div>
 
         <div class="lobby-right">
-          <h2>Conecte os celulares</h2>
-          <p class="hint">Aponte o QR Code com a câmera ou abra o link abaixo na mesma rede Wi-Fi.</p>
+          <h2>Conecte os jogadores</h2>
+          <p class="hint">Escaneie o QR Code ou abra o link abaixo em qualquer dispositivo na mesma rede.</p>
           <div id="qr-wrap"><img id="qr-img" alt="QR Code" /></div>
           <p id="qr-url" class="qr-url"></p>
           <div class="connected-list">
@@ -66,7 +70,7 @@
         </div>
 
         <div class="placing-banner hidden" id="placing-banner">
-          <div class="placing-label">Coloque o marcador de</div>
+          <div class="placing-label">Vez de marcar</div>
           <div class="placing-name" id="placing-name">—</div>
           <div class="placing-hint" id="placing-hint"></div>
           <div class="placing-choice hidden" id="placing-choice">
@@ -83,6 +87,7 @@
         <div class="actions">
           <button id="next-round-btn" class="primary hidden">Próxima Rodada ▶</button>
           <button id="play-again-btn" class="primary hidden">Jogar Novamente</button>
+          <button id="stop-game-btn" class="secondary">Encerrar jogo</button>
         </div>
       </aside>
     </section>
@@ -102,7 +107,7 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/colors.js"></script>
-  <script src="/js/board.js"></script>
+  <script src="/js/colors.js?v=__BUILD__"></script>
+  <script src="/js/board.js?v=__BUILD__"></script>
 </body>
 </html>

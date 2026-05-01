@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
 
   let state = null;
-  let myName = localStorage.getItem('ccd:name') || null;
+  let myName = sessionStorage.getItem('ccd:name') || null;
   let mySecret = null;
 
   function escapeHtml(s) {
@@ -11,7 +11,7 @@
   }
 
   function showScreen(name) {
-    ['login', 'waiting', 'secret', 'wait-turn', 'place-tablet', 'reveal', 'end'].forEach(s => {
+    ['loading', 'login', 'waiting', 'secret', 'wait-turn', 'place-tablet', 'reveal', 'end'].forEach(s => {
       const el = document.getElementById(s);
       if (s === name) el.classList.add('active'); else el.classList.remove('active');
     });
@@ -22,45 +22,32 @@
   }
 
   /* ---------- LOGIN ---------- */
-  const loginNames = $('login-names');
-  const loginEmpty = $('login-empty');
+  const joinNameInput = $('join-name-input');
+  const joinBtn = $('join-btn');
   const loginStatus = $('login-status');
 
-  function renderLogin() {
-    if (!state) return;
-    const names = state.status === 'lobby' ? state.lobbyPlayers : state.players.map(p => p.name);
-    loginNames.innerHTML = '';
-    if (!names.length) {
-      loginEmpty.classList.remove('hidden');
-    } else {
-      loginEmpty.classList.add('hidden');
-    }
-    const conn = state.lobbyConnected || {};
-    names.forEach((name, i) => {
-      const player = state.players.find(p => p.name === name);
-      const isConnected = player ? player.connected : !!conn[name];
-      const taken = isConnected && name !== myName;
-      const li = document.createElement('li');
-      li.className = taken ? 'taken' : '';
-      const color = player ? player.color : PALETTE[i % PALETTE.length];
-      li.innerHTML = `
-        <span class="swatch" style="background:${color}"></span>
-        <span class="name">${escapeHtml(name)}</span>
-        <span class="status">${taken ? 'conectado' : ''}</span>
-      `;
-      if (!taken) li.addEventListener('click', () => attemptJoin(name));
-      loginNames.appendChild(li);
-    });
-  }
+  joinBtn.addEventListener('click', attemptJoin);
+  joinNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') attemptJoin(); });
 
-  const PALETTE = ['#e63946', '#1d3557', '#2a9d8f', '#f4a261', '#7209b7', '#06aed5', '#80b918', '#ff006e', '#3a86ff', '#fb8500'];
-
-  function attemptJoin(name) {
+  function attemptJoin() {
+    const name = joinNameInput.value.trim();
+    if (!name) { loginStatus.textContent = 'Digite um nome.'; return; }
     socket.emit('join', { playerName: name });
     loginStatus.textContent = 'Entrando…';
+    joinBtn.disabled = true;
   }
 
   /* ---------- WAITING ---------- */
+  const editNameBtn = $('edit-name-btn');
+
+  editNameBtn.addEventListener('click', () => {
+    joinNameInput.value = myName || '';
+    myName = null;
+    loginStatus.textContent = '';
+    joinBtn.disabled = false;
+    showScreen('login');
+  });
+
   function renderWaiting() {
     $('waiting-name').textContent = myName || '';
     const dots = $('connected-dots');
@@ -152,19 +139,17 @@
 
   /* ---------- ROUTER ---------- */
   function route() {
-    if (!state) { showScreen('login'); return; }
+    if (!state) { showScreen('loading'); return; }
 
-    if (!myName) { showScreen('login'); renderLogin(); return; }
+    if (!myName) { showScreen('login'); return; }
 
     const myPlayer = state.players.find(p => p.name === myName);
 
     if (state.status === 'lobby') {
       if (!myPlayer && !state.lobbyPlayers.includes(myName)) {
-        // Name was removed
         myName = null;
-        localStorage.removeItem('ccd:name');
+        sessionStorage.removeItem('ccd:name');
         showScreen('login');
-        renderLogin();
         return;
       }
       showScreen('waiting');
@@ -178,12 +163,10 @@
       return;
     }
 
-    if (state.status !== 'playing') { showScreen('login'); renderLogin(); return; }
+    if (state.status !== 'playing') { showScreen('login'); return; }
 
     if (!myPlayer) {
-      // Name not in playing game; show login
       showScreen('login');
-      renderLogin();
       return;
     }
 
@@ -205,19 +188,19 @@
       if (isActive) {
         showScreen('wait-turn');
         renderWaitTurn();
-        $('wt-hint').textContent = 'Os outros jogadores estão marcando no tablet…';
+        $('wt-hint').textContent = 'Os outros jogadores estão marcando…';
       } else {
         const pending = state.pendingMarkers || [];
         if (pending[0] === myName) {
           showScreen('place-tablet');
           $('place-hint').textContent = phase === 'markers1'
             ? 'Toque na cor que você acha que é a secreta.'
-            : 'Toque para mover seu marcador ou adicionar o segundo.';
+            : 'Mova seu marcador ou adicione um segundo.';
           vibrate(40);
         } else if (pending.includes(myName)) {
           showScreen('wait-turn');
           renderWaitTurn();
-          $('wt-hint').textContent = `Aguarde sua vez de marcar (você é o ${pending.indexOf(myName) + 1}º).`;
+          $('wt-hint').textContent = `Aguarde sua vez (${pending.indexOf(myName) + 1}º da fila).`;
         } else {
           showScreen('wait-turn');
           renderWaitTurn();
@@ -241,7 +224,6 @@
 
   socket.on('game_state', (s) => {
     state = s;
-    if (state.status === 'lobby' && !myName) renderLogin();
     route();
   });
 
@@ -254,17 +236,25 @@
 
   socket.on('join_accepted', (d) => {
     myName = d.playerName;
-    localStorage.setItem('ccd:name', myName);
+    sessionStorage.setItem('ccd:name', myName);
     loginStatus.textContent = '';
-    route();
+    joinBtn.disabled = false;
   });
 
   socket.on('join_rejected', (d) => {
     loginStatus.textContent = d?.reason || 'Erro ao entrar.';
+    joinBtn.disabled = false;
     myName = null;
-    localStorage.removeItem('ccd:name');
+    sessionStorage.removeItem('ccd:name');
     showScreen('login');
-    renderLogin();
+  });
+
+  socket.on('kicked', () => {
+    myName = null;
+    sessionStorage.removeItem('ccd:name');
+    loginStatus.textContent = 'Você foi removido da sala.';
+    joinBtn.disabled = false;
+    showScreen('login');
   });
 
   socket.on('clue_rejected', (d) => {

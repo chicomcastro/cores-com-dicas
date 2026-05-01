@@ -11,15 +11,35 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/', (_req, res) => res.redirect('/board'));
-app.get('/board', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'board.html')));
-app.get('/player', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'player.html')));
+const BUILD = Date.now().toString(36);
+const fs = require('fs');
 
-const board = colors.generateBoard();
-const cellById = new Map(board.map(c => [c.id, c]));
+function serveHtml(file) {
+  const raw = fs.readFileSync(path.join(__dirname, 'public', file), 'utf8');
+  const html = raw.replace(/__BUILD__/g, BUILD);
+  return (_req, res) => { res.type('html').send(html); };
+}
+
+app.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.get('/', (_req, res) => res.redirect('/board'));
+app.get('/board', serveHtml('board.html'));
+app.get('/player', serveHtml('player.html'));
+app.use(express.static(path.join(__dirname, 'public')));
+
+const GRID_PRESETS = [
+  { cols: 15, rows: 9 },
+  { cols: 20, rows: 12 },
+  { cols: 30, rows: 18 },
+];
+
+let board = colors.generateBoard();
+let cellById = new Map(board.map(c => [c.id, c]));
 function getCell(col, row) {
   return cellById.get(`C${col}-R${row}`) || null;
+}
+function rebuildBoard(cols, rows) {
+  board = colors.generateBoard(cols, rows);
+  cellById = new Map(board.map(c => [c.id, c]));
 }
 
 function getLocalIp() {
@@ -43,7 +63,7 @@ app.get('/qr', async (_req, res) => {
 });
 
 const PLAYER_COLORS = [
-  '#e63946', '#1d3557', '#2a9d8f', '#f4a261', '#7209b7',
+  '#e63946', '#4a90d9', '#2a9d8f', '#f4a261', '#7209b7',
   '#06aed5', '#80b918', '#ff006e', '#3a86ff', '#fb8500'
 ];
 
@@ -87,6 +107,8 @@ function freshState() {
     clue2: null,
     markers: {},
     pendingMarkers: [],
+    gridCols: 30,
+    gridRows: 18,
     lastClueGiver: null,
     roundScores: null,
     revealCell: null,
@@ -132,8 +154,8 @@ function publicState() {
     roundScores: state.roundScores,
     revealCell: reveal ? state.revealCell : null,
     finalScores: state.finalScores,
-    boardCols: colors.COLS,
-    boardRows: colors.ROWS
+    boardCols: state.gridCols,
+    boardRows: state.gridRows
   };
 }
 
@@ -173,13 +195,13 @@ function startTurn() {
   broadcast();
 }
 
-function startGame(playerNames) {
+function startGame(playerNames, cols, rows) {
   const cleaned = (playerNames || [])
     .map(n => (typeof n === 'string' ? n.trim() : ''))
     .filter(Boolean);
   const unique = [...new Set(cleaned)];
-  if (unique.length < 3 || unique.length > 10) {
-    return { ok: false, reason: 'Número de jogadores deve ser entre 3 e 10.' };
+  if (unique.length < 2 || unique.length > 10) {
+    return { ok: false, reason: 'Número de jogadores deve ser entre 2 e 10.' };
   }
   const shuffled = [...unique].sort(() => Math.random() - 0.5);
 
@@ -191,7 +213,12 @@ function startGame(playerNames) {
     if (!previousBindings.has(name)) previousBindings.set(name, sid);
   }
 
+  const preset = GRID_PRESETS.find(p => p.cols === cols && p.rows === rows) || GRID_PRESETS[2];
+  rebuildBoard(preset.cols, preset.rows);
+
   state = freshState();
+  state.gridCols = preset.cols;
+  state.gridRows = preset.rows;
   state.status = 'playing';
   state.lobbyPlayers = shuffled;
   state.players = shuffled.map((name, i) => ({
@@ -347,24 +374,26 @@ io.on('connection', (socket) => {
     socket.emit('game_state', publicState());
   });
 
-  socket.on('lobby_update', (payload) => {
-    if (state.status !== 'lobby') return;
-    const names = (payload && Array.isArray(payload.players)) ? payload.players : [];
-    const cleaned = names
-      .map(n => (typeof n === 'string' ? n.trim() : ''))
-      .filter(Boolean)
-      .slice(0, 10);
-    state.lobbyPlayers = [...new Set(cleaned)];
-    broadcast();
-  });
-
   socket.on('join', (payload) => {
     const name = payload && typeof payload.playerName === 'string' ? payload.playerName.trim() : '';
     if (!name) return socket.emit('join_rejected', { reason: 'Nome inválido.' });
+    if (name.length > 14) return socket.emit('join_rejected', { reason: 'Nome muito longo (máx. 14 caracteres).' });
 
     if (state.status === 'lobby') {
-      if (!state.lobbyPlayers.includes(name)) {
-        return socket.emit('join_rejected', { reason: 'Nome não está na lista do tablet.' });
+      if (state.lobbyPlayers.includes(name)) {
+        const alreadyBound = [...socketBindings.entries()].find(([, n]) => n === name);
+        if (alreadyBound && alreadyBound[0] !== socket.id) {
+          socketBindings.delete(alreadyBound[0]);
+        }
+      } else {
+        if (state.lobbyPlayers.length >= 10) {
+          return socket.emit('join_rejected', { reason: 'Máximo de 10 jogadores atingido.' });
+        }
+        const oldName = socketBindings.get(socket.id);
+        if (oldName && oldName !== name) {
+          state.lobbyPlayers = state.lobbyPlayers.filter(n => n !== oldName);
+        }
+        state.lobbyPlayers.push(name);
       }
       socketBindings.set(socket.id, name);
       socket.emit('join_accepted', { playerName: name });
@@ -381,10 +410,25 @@ io.on('connection', (socket) => {
     broadcast();
   });
 
+  socket.on('kick_player', (payload) => {
+    if (state.status !== 'lobby') return;
+    const name = payload && typeof payload.playerName === 'string' ? payload.playerName.trim() : '';
+    if (!name) return;
+    state.lobbyPlayers = state.lobbyPlayers.filter(n => n !== name);
+    const boundSocket = [...socketBindings.entries()].find(([, n]) => n === name);
+    if (boundSocket) {
+      socketBindings.delete(boundSocket[0]);
+      io.to(boundSocket[0]).emit('kicked');
+    }
+    broadcast();
+  });
+
   socket.on('start_game', (payload) => {
     if (state.status !== 'lobby') return;
     const names = payload && Array.isArray(payload.players) ? payload.players : state.lobbyPlayers;
-    const result = startGame(names);
+    const cols = payload && typeof payload.cols === 'number' ? payload.cols : 30;
+    const rows = payload && typeof payload.rows === 'number' ? payload.rows : 18;
+    const result = startGame(names, cols, rows);
     if (!result.ok) {
       socket.emit('start_rejected', { reason: result.reason });
     }

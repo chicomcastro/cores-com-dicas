@@ -3,19 +3,34 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#0e0f14" />
+  <meta name="theme-color" content="#1a1520" />
   <title>Cores com Dicas — Jogador</title>
-  <link rel="stylesheet" href="/css/player.css" />
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/player.css?v=__BUILD__" />
 </head>
 <body>
   <main id="app">
+    <!-- LOADING -->
+    <section id="loading" class="screen active">
+      <div class="center-card">
+        <h1 class="loading-title">Cores com Dicas</h1>
+        <div class="spinner"></div>
+        <p class="hint">Conectando…</p>
+      </div>
+    </section>
+
     <!-- LOGIN -->
-    <section id="login" class="screen active">
+    <section id="login" class="screen">
       <div class="login-inner">
         <h1>Cores com Dicas</h1>
-        <p class="subtitle">Selecione seu nome para entrar</p>
-        <ul id="login-names" class="login-names"></ul>
-        <p id="login-empty" class="hint hidden">Adicione seu nome no tablet primeiro.</p>
+        <p class="subtitle">Digite seu nome para entrar</p>
+        <div class="join-form">
+          <input id="join-name-input" type="text" placeholder="Seu nome" maxlength="14" autocomplete="off" autocapitalize="words" />
+          <button id="join-btn" class="primary big">Entrar</button>
+        </div>
         <p id="login-status" class="hint"></p>
       </div>
     </section>
@@ -25,8 +40,9 @@
       <div class="center-card">
         <div class="badge" id="waiting-badge">Aguardando início</div>
         <h2 id="waiting-title">Olá, <span id="waiting-name">jogador</span>!</h2>
-        <p class="hint">O tabuleiro vai começar quando todos estiverem prontos.</p>
+        <p class="hint">O jogo vai começar quando todos estiverem prontos.</p>
         <div class="connected-dots" id="connected-dots"></div>
+        <button id="edit-name-btn" class="edit-btn">Editar nome</button>
       </div>
     </section>
 
@@ -63,9 +79,9 @@
     <section id="place-tablet" class="screen">
       <div class="center-card">
         <div class="badge">Sua vez de marcar</div>
-        <h2>Vá até o tablet</h2>
-        <p class="hint" id="place-hint">Toque na cor que você acha que é a cor secreta.</p>
-        <div class="big-arrow">📲 ➜ 🖥️</div>
+        <h2>Vá até o tabuleiro</h2>
+        <p class="hint" id="place-hint">Toque na cor que você acha que é a secreta.</p>
+        <div class="big-arrow">👉 🖥️</div>
       </div>
     </section>
 
@@ -86,12 +102,12 @@
         <h2 id="end-title">Fim de Jogo</h2>
         <div class="score-big" id="end-score">0</div>
         <p class="hint" id="end-rank"></p>
-        <p class="hint">Confira o placar final no tablet.</p>
+        <p class="hint">Confira o placar final no tabuleiro.</p>
       </div>
     </section>
   </main>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/player.js"></script>
+  <script src="/js/player.js?v=__BUILD__"></script>
 </body>
 </html>
