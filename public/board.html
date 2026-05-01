@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Cores com Dicas — Tabuleiro</title>
   <link rel="icon" href="data:," />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -12,8 +12,19 @@
 </head>
 <body>
   <div id="app">
+    <!-- LOADING -->
+    <section id="loading" class="screen">
+      <div class="loading-card">
+        <h1 class="loading-title">Cores com Dicas</h1>
+        <div class="loading-dots">
+          <span></span><span></span><span></span>
+        </div>
+        <p class="hint">Conectando…</p>
+      </div>
+    </section>
+
     <!-- LOBBY -->
-    <section id="lobby" class="screen">
+    <section id="lobby" class="screen hidden">
       <div class="lobby-grid">
         <div class="lobby-left">
           <h1>Cores com Dicas</h1>

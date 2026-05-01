@@ -309,7 +309,7 @@
 
   /* ---------- SCREENS ---------- */
   function showScreen(name) {
-    ['lobby', 'game', 'end'].forEach(s => {
+    ['loading', 'lobby', 'game', 'end'].forEach(s => {
       const el = document.getElementById(s);
       if (s === name) el.classList.remove('hidden'); else el.classList.add('hidden');
     });
