@@ -48,7 +48,11 @@
 
     <!-- ACTIVE: SECRET COLOR -->
     <section id="secret" class="screen">
-      <div id="secret-color" class="secret-color">
+      <div id="secret-color" class="secret-color secret-hidden">
+        <div class="secret-veil">
+          <div class="veil-icon">👁</div>
+          <div class="veil-text">Toque e segure para ver</div>
+        </div>
         <div class="secret-meta">
           <div class="secret-tag">Sua cor secreta</div>
           <div class="secret-id" id="secret-id">—</div>
@@ -57,31 +61,61 @@
       <div class="clue-form">
         <label id="clue-label">Dê a 1ª dica (1 palavra):</label>
         <input id="clue-input" type="text" placeholder="ex: oceano" autocomplete="off" autocapitalize="off" autocorrect="off" />
-        <button id="clue-send" class="primary big">Enviar Dica</button>
+        <div class="clue-buttons">
+          <button id="clue-send" class="primary big">Enviar Dica</button>
+          <button id="clue-skip" class="secondary skip-btn" title="Pular sem digitar (você fala a dica)">Pular ⤼</button>
+        </div>
         <p id="clue-error" class="error"></p>
       </div>
     </section>
 
-    <!-- WAITING TURN (other player active) -->
+    <!-- WAITING TURN (other player active OR active waiting markers) -->
     <section id="wait-turn" class="screen">
       <div class="center-card">
-        <div class="badge">Aguarde sua vez</div>
+        <div class="badge" id="wt-badge">Aguarde sua vez</div>
         <h2>Vez de <span id="wt-active">—</span></h2>
         <div id="wt-clue-block">
           <div class="clue-line"><span class="clue-tag">1</span><span id="wt-clue-1">—</span></div>
           <div class="clue-line"><span class="clue-tag">2</span><span id="wt-clue-2">—</span></div>
         </div>
         <p id="wt-hint" class="hint"></p>
+
+        <div id="wt-active-info" class="active-info hidden">
+          <div class="active-info-row">
+            <span class="active-info-label">Sua cor está em</span>
+            <span id="wt-coords" class="active-info-coords">—</span>
+          </div>
+          <div class="active-info-row">
+            <span class="active-info-label">Pontos parciais</span>
+            <span id="wt-partial" class="active-info-points">+0</span>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- PLACE MARKER ON TABLET -->
-    <section id="place-tablet" class="screen">
-      <div class="center-card">
+    <!-- PLACE MARKER ON PHONE -->
+    <section id="place-marker" class="screen">
+      <div class="place-header">
         <div class="badge">Sua vez de marcar</div>
-        <h2>Vá até o tabuleiro</h2>
-        <p class="hint" id="place-hint">Toque na cor que você acha que é a secreta.</p>
-        <div class="big-arrow">👉 🖥️</div>
+        <div id="pm-clue-block" class="pm-clue-block">
+          <div class="clue-line"><span class="clue-tag">1</span><span id="pm-clue-1">—</span></div>
+          <div class="clue-line"><span class="clue-tag">2</span><span id="pm-clue-2">—</span></div>
+        </div>
+        <p class="hint mini" id="pm-hint">Toque uma cor para selecionar, toque de novo para confirmar.</p>
+      </div>
+      <div class="mini-board-wrap" id="mini-board-wrap">
+        <div class="mini-board-pan" id="mini-board-pan">
+          <div class="mini-board" id="mini-board"></div>
+        </div>
+        <div class="mini-board-hud">
+          <button class="zoom-btn" id="mini-zoom-out" aria-label="Diminuir zoom">−</button>
+          <button class="zoom-btn" id="mini-zoom-reset" aria-label="Resetar zoom">⤾</button>
+          <button class="zoom-btn" id="mini-zoom-in" aria-label="Aumentar zoom">+</button>
+        </div>
+      </div>
+      <div class="place-footer">
+        <div class="pm-selected" id="pm-selected">Selecione uma cor…</div>
+        <button id="pm-confirm" class="primary big" disabled>Confirmar</button>
       </div>
     </section>
 
@@ -105,9 +139,15 @@
         <p class="hint">Confira o placar final no tabuleiro.</p>
       </div>
     </section>
+
+    <!-- MINI RANKING (sticky bottom, visible during the game) -->
+    <div id="mini-rank" class="mini-rank hidden">
+      <div class="mini-rank-row" id="mini-rank-row"></div>
+    </div>
   </main>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/colors.js?v=__BUILD__"></script>
   <script src="/js/player.js?v=__BUILD__"></script>
 </body>
 </html>
