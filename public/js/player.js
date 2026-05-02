@@ -16,10 +16,14 @@
   let zoom = 1;
   let panX = 0, panY = 0;
 
-  // check URL for room code
+  // check URL for room code (use once, then clean URL)
   const urlParams = new URLSearchParams(window.location.search);
   const urlRoom = (urlParams.get('room') || '').toUpperCase().trim();
-  if (urlRoom) myRoom = urlRoom;
+  if (urlRoom) {
+    myRoom = urlRoom;
+    sessionStorage.setItem('ccd:room', urlRoom);
+    window.history.replaceState({}, '', window.location.pathname);
+  }
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -39,14 +43,16 @@
   function coordOf(c) { return `${colLabel(c.col)}${rowLabel(c.row)}`; }
 
   function showScreen(name) {
-    ['loading', 'room-entry', 'login', 'waiting', 'secret', 'wait-turn', 'place-marker', 'reveal', 'end'].forEach(s => {
+    ['loading', 'home', 'create-room', 'join-room', 'login', 'waiting', 'secret', 'wait-turn', 'place-marker', 'reveal', 'end'].forEach(s => {
       const el = document.getElementById(s);
       if (!el) return;
       if (s === name) el.classList.add('active'); else el.classList.remove('active');
     });
-    const showRank = !['loading', 'room-entry', 'login', 'waiting', 'end'].includes(name);
+    const showRank = !['loading', 'home', 'create-room', 'join-room', 'login', 'waiting', 'end'].includes(name);
     document.body.classList.toggle('has-rank', showRank);
     $('mini-rank').classList.toggle('hidden', !showRank);
+    const showExit = !['loading', 'home', 'create-room', 'join-room', 'login'].includes(name);
+    $('exit-room-btn').classList.toggle('hidden', !showExit);
   }
 
   function vibrate(ms) {
@@ -106,22 +112,81 @@
     }, { once: true, passive: true });
   });
 
-  /* ---------- ROOM ENTRY ---------- */
+  /* ---------- GRID PRESETS ---------- */
+  const GRID_PRESETS = [
+    { label: 'Fácil (15×9)', cols: 15, rows: 9 },
+    { label: 'Médio (20×12)', cols: 20, rows: 12 },
+    { label: 'Difícil (30×18)', cols: 30, rows: 18 },
+  ];
+  let selectedPreset = 1;
+
+  function renderGridOptions(container, onSelect) {
+    container.innerHTML = '';
+    GRID_PRESETS.forEach((p, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'grid-size-btn' + (i === selectedPreset ? ' active' : '');
+      btn.textContent = p.label;
+      btn.addEventListener('click', () => { selectedPreset = i; if (onSelect) onSelect(i); renderGridOptions(container, onSelect); });
+      container.appendChild(btn);
+    });
+  }
+
+  /* ---------- HOME ---------- */
+  function updateGreeting() {
+    const el = $('home-greeting');
+    if (el) el.textContent = myName ? `Olá, ${myName}!` : '';
+  }
+
+  $('home-create-btn').addEventListener('click', () => {
+    renderGridOptions($('create-grid-options'));
+    showScreen('create-room');
+  });
+  $('home-join-btn').addEventListener('click', () => {
+    $('password-field').classList.add('hidden');
+    $('room-status').textContent = '';
+    showScreen('join-room');
+  });
+
+  /* ---------- CREATE ROOM ---------- */
+  $('create-room-btn').addEventListener('click', () => {
+    const password = $('create-password').value.trim() || null;
+    $('create-room-btn').disabled = true;
+    $('create-status').textContent = 'Criando sala…';
+    socket.emit('create_room', { password, gridSize: selectedPreset }, (resp) => {
+      $('create-room-btn').disabled = false;
+      $('create-status').textContent = '';
+      if (resp && resp.code) {
+        myRoom = resp.code;
+        sessionStorage.setItem('ccd:room', myRoom);
+        if (password) sessionStorage.setItem('ccd:room-pw', password);
+        joinAttempted = false;
+        if (myName) {
+          socket.emit('join', { playerName: myName, room: myRoom });
+        }
+      }
+    });
+  });
+  $('create-back-btn').addEventListener('click', () => showScreen('home'));
+
+  /* ---------- JOIN ROOM ---------- */
   const roomCodeInput = $('room-code-input');
   const roomJoinBtn = $('room-join-btn');
   const roomStatus = $('room-status');
 
   roomJoinBtn.addEventListener('click', joinRoom);
   roomCodeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
+  $('join-back-btn').addEventListener('click', () => showScreen('home'));
 
   function joinRoom() {
     const code = roomCodeInput.value.trim().toUpperCase();
     if (!code || code.length < 3) { roomStatus.textContent = 'Digite o código da sala.'; return; }
+    const pw = $('room-password-input').value.trim();
     myRoom = code;
     sessionStorage.setItem('ccd:room', code);
+    if (pw) sessionStorage.setItem('ccd:room-pw', pw);
     roomStatus.textContent = 'Conectando…';
     roomJoinBtn.disabled = true;
-    socket.emit('join_room', { code });
+    socket.emit('join_room', { code, password: pw || undefined });
   }
 
   /* ---------- LOGIN ---------- */
@@ -135,9 +200,16 @@
   function attemptJoin() {
     const name = joinNameInput.value.trim();
     if (!name) { loginStatus.textContent = 'Digite um nome.'; return; }
-    socket.emit('join', { playerName: name, room: myRoom });
-    loginStatus.textContent = 'Entrando…';
-    joinBtn.disabled = true;
+    myName = name;
+    sessionStorage.setItem('ccd:name', name);
+    loginStatus.textContent = '';
+    joinBtn.disabled = false;
+    if (myRoom && state) {
+      joinAttempted = false;
+      socket.emit('join', { playerName: name, room: myRoom });
+    } else {
+      showScreen('home');
+    }
   }
 
   /* ---------- WAITING ---------- */
@@ -151,19 +223,74 @@
     showScreen('login');
   });
 
+  /* ---------- LOBBY ACTIONS ---------- */
+  function copyToClipboard(text, btn) {
+    const done = () => { btn.textContent = '✓'; setTimeout(() => { btn.textContent = '📋'; }, 1500); };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallback());
+    } else { fallback(); }
+    function fallback() {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      ta.remove();
+    }
+  }
+
+  $('lobby-copy-code').addEventListener('click', () => {
+    copyToClipboard(myRoom || '', $('lobby-copy-code'));
+  });
+
+  $('lobby-start-btn').addEventListener('click', () => {
+    const preset = GRID_PRESETS[selectedPreset];
+    socket.emit('start_game', {
+      players: state?.lobbyPlayers || [],
+      cols: preset.cols,
+      rows: preset.rows,
+    });
+  });
+
+  function leaveRoom() {
+    myRoom = null;
+    state = null;
+    sessionStorage.removeItem('ccd:room');
+    sessionStorage.removeItem('ccd:room-pw');
+    updateGreeting();
+    showScreen('home');
+  }
+
+  $('lobby-leave-btn').addEventListener('click', leaveRoom);
+
+  $('exit-room-btn').addEventListener('click', () => {
+    if (confirm('Sair da sala?')) leaveRoom();
+  });
+
+  socket.on('start_rejected', (d) => {
+    $('lobby-help').textContent = d?.reason || 'Não foi possível iniciar.';
+  });
+
   function renderWaiting() {
     $('waiting-name').textContent = myName || '';
-    const dots = $('connected-dots');
-    dots.innerHTML = '';
+    $('lobby-room-code').textContent = myRoom || '—';
+
+    const listEl = $('lobby-player-list');
+    listEl.innerHTML = '';
     const conn = state?.lobbyConnected || {};
     (state?.lobbyPlayers || []).forEach(name => {
-      const player = state.players.find(p => p.name === name);
-      const isConnected = player ? player.connected : !!conn[name];
-      const d = document.createElement('div');
-      d.className = 'dot' + (isConnected ? ' on' : '');
-      d.title = name;
-      dots.appendChild(d);
+      const isConnected = !!conn[name];
+      const div = document.createElement('div');
+      div.className = 'lobby-player-item' + (isConnected ? ' connected' : '');
+      div.innerHTML = `<span class="player-name">${escapeHtml(name)}</span><span class="conn-dot ${isConnected ? 'on' : ''}"></span>`;
+      listEl.appendChild(div);
     });
+
+    const names = state?.lobbyPlayers || [];
+    const enough = names.length >= 2 && names.length <= 10;
+    $('lobby-start-btn').disabled = !enough;
+    const help = $('lobby-help');
+    if (names.length < 2) help.textContent = `Faltam ${2 - names.length} jogador(es).`;
+    else help.textContent = 'Pronto para iniciar!';
   }
 
   /* ---------- SECRET (clue giver) ---------- */
@@ -333,6 +460,24 @@
     miniBoard.innerHTML = '';
     miniBoard.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
     miniBoard.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+    const colLabels = $('mini-col-labels');
+    const rowLabels = $('mini-row-labels');
+    colLabels.innerHTML = '';
+    colLabels.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    for (let i = 0; i < cols; i++) {
+      const s = document.createElement('span');
+      s.textContent = colLabel(i);
+      colLabels.appendChild(s);
+    }
+    rowLabels.innerHTML = '';
+    rowLabels.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+    for (let i = 0; i < rows; i++) {
+      const s = document.createElement('span');
+      s.textContent = rowLabel(i);
+      rowLabels.appendChild(s);
+    }
+
     miniCellEls = [];
     miniCells.forEach(c => {
       const div = document.createElement('div');
@@ -349,8 +494,7 @@
   function onMiniCellClick(c) {
     if (!state) return;
     if (state.phase !== 'markers1' && state.phase !== 'markers2') return;
-    const next = (state.pendingMarkers || [])[0];
-    if (next !== myName) return;
+    if (!(state.pendingMarkers || []).includes(myName)) return;
     if (pendingPick && pendingPick.col === c.col && pendingPick.row === c.row) {
       const markerIndex = state.phase === 'markers1' ? 1 : 2;
       socket.emit('place_marker', { playerName: myName, col: c.col, row: c.row, markerIndex });
@@ -402,8 +546,7 @@
   pmConfirm.addEventListener('click', () => {
     if (!pendingPick || !state) return;
     if (state.phase !== 'markers1' && state.phase !== 'markers2') return;
-    const next = (state.pendingMarkers || [])[0];
-    if (next !== myName) return;
+    if (!(state.pendingMarkers || []).includes(myName)) return;
     const markerIndex = state.phase === 'markers1' ? 1 : 2;
     socket.emit('place_marker', { playerName: myName, col: pendingPick.col, row: pendingPick.row, markerIndex });
     vibrate(40);
@@ -529,19 +672,89 @@
   }, { passive: false });
 
   /* ---------- REVEAL ---------- */
+  const nextRoundBtn = $('next-round-btn');
+  nextRoundBtn.addEventListener('click', () => {
+    socket.emit('next_round');
+    nextRoundBtn.disabled = true;
+    nextRoundBtn.textContent = 'Aguardando…';
+  });
+
   function renderReveal() {
     const me = state.players.find(p => p.name === myName);
     const delta = state.roundScores ? (state.roundScores[myName] || 0) : 0;
     $('score-big').textContent = (delta >= 0 ? '+' : '') + delta;
     $('total-score').textContent = me ? me.score : 0;
-    if (state.turnsTaken + 1 >= state.totalTurns) {
-      $('reveal-hint').textContent = 'Quase lá! Aguarde o placar final…';
-    } else {
-      $('reveal-hint').textContent = 'Aguarde a próxima rodada…';
+    const isLast = state.turnsTaken + 1 >= state.totalTurns;
+    nextRoundBtn.textContent = isLast ? 'Ver Placar Final' : 'Próxima Rodada';
+    nextRoundBtn.disabled = false;
+    renderRevealBoard();
+  }
+
+  function renderRevealBoard() {
+    if (!state || !G) return;
+    const cols = state.boardCols, rows = state.boardRows;
+    const board = $('reveal-board');
+    const cells = G.generateBoard(cols, rows);
+    board.innerHTML = '';
+    board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    board.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+
+    const rColLabels = $('reveal-col-labels');
+    const rRowLabels = $('reveal-row-labels');
+    rColLabels.innerHTML = '';
+    rColLabels.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    for (let i = 0; i < cols; i++) {
+      const s = document.createElement('span');
+      s.textContent = colLabel(i);
+      rColLabels.appendChild(s);
     }
+    rRowLabels.innerHTML = '';
+    rRowLabels.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+    for (let i = 0; i < rows; i++) {
+      const s = document.createElement('span');
+      s.textContent = rowLabel(i);
+      rRowLabels.appendChild(s);
+    }
+
+    const rc = state.revealCell;
+    cells.forEach(c => {
+      const div = document.createElement('div');
+      div.className = 'reveal-cell';
+      div.style.background = G.cellHsl(c);
+      if (rc) {
+        const dc = Math.abs(c.col - rc.col), dr = Math.abs(c.row - rc.row);
+        const d = Math.max(dc, dr);
+        if (d === 0) {
+          div.classList.add('secret-cell');
+        } else if (d <= 1) {
+          div.classList.add('score-3x3');
+        } else if (d <= 2) {
+          div.classList.add('score-5x5');
+        }
+      }
+      const markers = state.markers || {};
+      Object.entries(markers).forEach(([name, mks]) => {
+        const player = state.players.find(p => p.name === name);
+        if (!player) return;
+        [1, 2].forEach(idx => {
+          const m = mks[idx];
+          if (!m || m.col !== c.col || m.row !== c.row) return;
+          const dot = document.createElement('div');
+          dot.className = 'reveal-marker' + (idx === 2 ? ' m2' : '');
+          dot.style.background = player.color;
+          dot.textContent = name.charAt(0).toUpperCase();
+          div.appendChild(dot);
+        });
+      });
+      board.appendChild(div);
+    });
   }
 
   /* ---------- END ---------- */
+  $('end-play-again-btn').addEventListener('click', () => {
+    socket.emit('reset_game');
+  });
+
   function renderEnd() {
     const me = state.players.find(p => p.name === myName);
     $('end-score').textContent = me ? me.score : 0;
@@ -573,22 +786,25 @@
   /* ---------- ROUTER ---------- */
   let prevPhase = null;
   let prevActive = null;
-  let prevPendingFirst = null;
+  let prevWasPending = false;
+  let joinAttempted = false;
 
   function route() {
     if (!state) { showScreen('loading'); return; }
-    if (!myRoom) { showScreen('room-entry'); return; }
     if (!myName) { showScreen('login'); return; }
+    if (!myRoom) { updateGreeting(); showScreen('home'); return; }
 
     const myPlayer = state.players.find(p => p.name === myName);
 
     if (state.status === 'lobby') {
       if (!myPlayer && !state.lobbyPlayers.includes(myName)) {
-        myName = null;
-        sessionStorage.removeItem('ccd:name');
-        showScreen('login');
+        if (!joinAttempted) {
+          joinAttempted = true;
+          socket.emit('join', { playerName: myName, room: myRoom });
+        }
         return;
       }
+      joinAttempted = false;
       showScreen('waiting');
       renderWaiting();
       return;
@@ -603,7 +819,10 @@
     if (state.status !== 'playing') { showScreen('login'); return; }
 
     if (!myPlayer) {
-      showScreen('login');
+      if (!joinAttempted) {
+        joinAttempted = true;
+        socket.emit('join', { playerName: myName, room: myRoom });
+      }
       return;
     }
 
@@ -613,10 +832,8 @@
     renderMiniRank();
 
     const turnChanged = prevActive !== state.activeName || prevPhase !== phase;
-    const myTurnToClue = (phase === 'clue1' || phase === 'clue2') && isActive;
-    const pendingFirst = (state.pendingMarkers || [])[0];
-    const myTurnToMark = (phase === 'markers1' || phase === 'markers2') && pendingFirst === myName;
-    const wasMyTurnToMark = (prevPhase === 'markers1' || prevPhase === 'markers2') && prevPendingFirst === myName;
+    const myPending = (state.pendingMarkers || []).includes(myName);
+    const wasMyTurnToMark = prevWasPending;
 
     if (phase === 'clue1' || phase === 'clue2') {
       if (isActive) {
@@ -629,7 +846,7 @@
         showScreen('wait-turn');
         renderWaitTurn();
       }
-      prevPhase = phase; prevActive = state.activeName; prevPendingFirst = pendingFirst;
+      prevPhase = phase; prevActive = state.activeName; prevWasPending = myPending;
       return;
     }
 
@@ -637,22 +854,19 @@
       if (isActive) {
         showScreen('wait-turn');
         renderWaitTurn();
+      } else if (myPending) {
+        showScreen('place-marker');
+        renderPlaceMarker();
+        if (!wasMyTurnToMark) notifyMyTurn('mark');
       } else {
-        if (pendingFirst === myName) {
-          showScreen('place-marker');
-          renderPlaceMarker();
-          if (!wasMyTurnToMark) notifyMyTurn('mark');
-        } else if ((state.pendingMarkers || []).includes(myName)) {
-          showScreen('wait-turn');
-          renderWaitTurn();
-          $('wt-hint').textContent = `Aguarde sua vez (${state.pendingMarkers.indexOf(myName) + 1}º da fila).`;
-        } else {
-          showScreen('wait-turn');
-          renderWaitTurn();
-          $('wt-hint').textContent = 'Você já marcou. Esperando os outros…';
-        }
+        showScreen('wait-turn');
+        renderWaitTurn();
+        const remaining = (state.pendingMarkers || []).length;
+        $('wt-hint').textContent = remaining > 0
+          ? `Você já marcou. Aguardando ${remaining} jogador${remaining > 1 ? 'es' : ''}…`
+          : 'Todos marcaram! Aguardando…';
       }
-      prevPhase = phase; prevActive = state.activeName; prevPendingFirst = pendingFirst;
+      prevPhase = phase; prevActive = state.activeName; prevWasPending = myPending;
       return;
     }
 
@@ -660,31 +874,39 @@
       renderReveal();
       showScreen('reveal');
       clearPendingPick();
-      prevPhase = phase; prevActive = state.activeName; prevPendingFirst = pendingFirst;
+      prevPhase = phase; prevActive = state.activeName; prevWasPending = myPending;
       return;
     }
   }
 
   /* ---------- SOCKET ---------- */
   socket.on('connect', () => {
+    console.log('[CCD] connect myRoom=', myRoom, 'myName=', myName);
     if (myRoom) {
-      socket.emit('join_room', { code: myRoom });
+      const savedPw = sessionStorage.getItem('ccd:room-pw') || undefined;
+      socket.emit('join_room', { code: myRoom, password: savedPw });
+    } else if (!myName) {
+      showScreen('login');
+    } else {
+      updateGreeting();
+      showScreen('home');
     }
   });
 
   socket.on('room_joined', (d) => {
+    console.log('[CCD] room_joined', d);
     myRoom = d.code;
     sessionStorage.setItem('ccd:room', myRoom);
     roomJoinBtn.disabled = false;
     roomStatus.textContent = '';
     if (myName) {
+      joinAttempted = false;
       socket.emit('join', { playerName: myName, room: myRoom });
-    } else {
-      showScreen('login');
     }
   });
 
   socket.on('game_state', (s) => {
+    console.log('[CCD] game_state status=', s.status, 'lobbyPlayers=', s.lobbyPlayers, 'myName=', myName);
     const prev = state;
     state = s;
     if (prev) {
@@ -710,20 +932,32 @@
   });
 
   socket.on('join_accepted', (d) => {
+    console.log('[CCD] join_accepted', d);
     myName = d.playerName;
     sessionStorage.setItem('ccd:name', myName);
+    joinAttempted = false;
     loginStatus.textContent = '';
     joinBtn.disabled = false;
   });
 
   socket.on('join_rejected', (d) => {
+    console.log('[CCD] join_rejected', d);
     const reason = d?.reason || 'Erro ao entrar.';
+    if (d?.needsPassword) {
+      $('password-field').classList.remove('hidden');
+      roomStatus.textContent = reason;
+      roomJoinBtn.disabled = false;
+      sessionStorage.removeItem('ccd:room-pw');
+      showScreen('join-room');
+      return;
+    }
     if (!myRoom || reason === 'Sala não encontrada.') {
       roomStatus.textContent = reason;
       roomJoinBtn.disabled = false;
       myRoom = null;
       sessionStorage.removeItem('ccd:room');
-      showScreen('room-entry');
+      sessionStorage.removeItem('ccd:room-pw');
+      showScreen('home');
       return;
     }
     loginStatus.textContent = reason;
@@ -739,6 +973,11 @@
     loginStatus.textContent = 'Você foi removido da sala.';
     joinBtn.disabled = false;
     showScreen('login');
+  });
+
+  socket.on('room_expired', () => {
+    alert('A sala expirou após 1 hora. Crie uma nova sala para continuar jogando.');
+    leaveRoom();
   });
 
   socket.on('clue_rejected', (d) => {

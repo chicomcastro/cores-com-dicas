@@ -191,6 +191,7 @@ function freshState() {
     pendingMarkers: [],
     gridCols: 30,
     gridRows: 18,
+    password: null,
     lastClueGiver: null,
     roundScores: null,
     revealCell: null,
@@ -198,15 +199,21 @@ function freshState() {
   };
 }
 
-function createRoom() {
+function createRoom(opts = {}) {
   const code = generateCode();
   const state = freshState();
-  const board = colors.generateBoard();
+  if (opts.password) state.password = String(opts.password).trim().slice(0, 20);
+  if (typeof opts.gridSize === 'number' && GRID_PRESETS[opts.gridSize]) {
+    state.gridCols = GRID_PRESETS[opts.gridSize].cols;
+    state.gridRows = GRID_PRESETS[opts.gridSize].rows;
+  }
+  const board = colors.generateBoard(state.gridCols, state.gridRows);
   rooms.set(code, {
     state,
     socketBindings: new Map(),
     board,
     cellById: new Map(board.map(c => [c.id, c])),
+    _createdAt: Date.now(),
   });
   return code;
 }
@@ -225,19 +232,20 @@ function getRoomForSocket(socket) {
 }
 
 /* ---------- ROOM CLEANUP ---------- */
-const ROOM_TTL = 4 * 60 * 60 * 1000;
+const ROOM_TTL = 60 * 60 * 1000;
 setInterval(() => {
   const now = Date.now();
   for (const [code, room] of rooms) {
-    if (room._lastActivity && now - room._lastActivity > ROOM_TTL) {
+    if (room._createdAt && now - room._createdAt > ROOM_TTL) {
+      io.to(code).emit('room_expired');
       rooms.delete(code);
       if (db) {
         db.collection(ROOMS_COLLECTION).doc(code).delete().catch(() => {});
       }
-      console.log(`Cleaned up room ${code}`);
+      console.log(`[Room] Expired room ${code} (>1h)`);
     }
   }
-}, 10 * 60 * 1000);
+}, 5 * 60 * 1000);
 
 /* ---------- GAME LOGIC ---------- */
 function publicState(room, code) {
@@ -274,7 +282,8 @@ function publicState(room, code) {
     revealCell: reveal ? state.revealCell : null,
     finalScores: state.finalScores,
     boardCols: state.gridCols,
-    boardRows: state.gridRows
+    boardRows: state.gridRows,
+    hasPassword: !!state.password
   };
 }
 
@@ -514,11 +523,13 @@ function resetGame(room, code) {
 io.on('connection', (socket) => {
 
   socket.on('create_room', (payload, callback) => {
-    const code = createRoom();
+    const opts = (typeof payload === 'object' && payload !== null && typeof payload !== 'function') ? payload : {};
+    const code = createRoom(opts);
     socket._roomCode = code;
     socket.join(`room:${code}`);
     const room = getRoom(code);
     room._lastActivity = Date.now();
+    console.log(`[Room] Created ${code} (total: ${rooms.size})`);
     const cb = typeof callback === 'function' ? callback : (typeof payload === 'function' ? payload : null);
     if (cb) cb({ code });
     socket.emit('game_state', publicState(room, code));
@@ -527,7 +538,13 @@ io.on('connection', (socket) => {
   socket.on('join_room', (payload) => {
     const code = (payload?.code || '').toUpperCase().trim();
     const room = getRoom(code);
+    console.log(`[Room] join_room code=${code} found=${!!room} (rooms: ${[...rooms.keys()].join(',')})`);
     if (!room) return socket.emit('join_rejected', { reason: 'Sala não encontrada.' });
+    if (room.state.password) {
+      const pw = (payload?.password || '').trim();
+      if (!pw) return socket.emit('join_rejected', { reason: 'Senha necessária.', needsPassword: true, code });
+      if (pw !== room.state.password) return socket.emit('join_rejected', { reason: 'Senha incorreta.', needsPassword: true, code });
+    }
     socket._roomCode = code;
     socket.join(`room:${code}`);
     socket.emit('room_joined', { code });
@@ -601,6 +618,22 @@ io.on('connection', (socket) => {
       io.to(boundSocket[0]).emit('kicked');
     }
     broadcast(room, code);
+  });
+
+  socket.on('update_room_settings', (payload) => {
+    const code = socketRoom(socket);
+    const room = code && getRoom(code);
+    if (!room || room.state.status !== 'lobby') return;
+    if (payload && typeof payload.cols === 'number' && typeof payload.rows === 'number') {
+      const preset = GRID_PRESETS.find(p => p.cols === payload.cols && p.rows === payload.rows);
+      if (preset) {
+        room.state.gridCols = preset.cols;
+        room.state.gridRows = preset.rows;
+        room.board = colors.generateBoard(preset.cols, preset.rows);
+        room.cellById = new Map(room.board.map(c => [c.id, c]));
+        broadcast(room, code);
+      }
+    }
   });
 
   socket.on('start_game', (payload) => {

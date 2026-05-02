@@ -1,16 +1,20 @@
 # Cores com Dicas
 
-Jogo web multiplayer inspirado em **Hues and Cues**. Um tablet funciona
-como tabuleiro central e cada jogador usa o próprio dispositivo para ver sua cor
-secreta e enviar dicas.
+Jogo web multiplayer inspirado em **Hues and Cues**. Cada jogador usa o próprio
+celular para jogar — o tabuleiro central (tablet/TV) é opcional e funciona como
+espectador.
 
 ## Jogar Online
 
-Acesse o tabuleiro em qualquer navegador:
+Acesse pelo celular ou computador:
+
+**[cores-com-dicas-4oo37yjdva-rj.a.run.app/player](https://cores-com-dicas-4oo37yjdva-rj.a.run.app/player)**
+
+Crie uma sala ou entre com o código de uma sala existente. Compartilhe o código com os outros jogadores.
+
+Opcionalmente, abra o tabuleiro em uma TV ou tablet para acompanhar o jogo como espectador:
 
 **[cores-com-dicas-4oo37yjdva-rj.a.run.app/board](https://cores-com-dicas-4oo37yjdva-rj.a.run.app/board)**
-
-Um código de sala será gerado. Compartilhe com os jogadores para que entrem pelo link ou QR Code.
 
 ## Rodar local
 
@@ -24,17 +28,18 @@ npm start
 O servidor abre na porta `3000`. Conecte todos os dispositivos à mesma rede
 (não precisa de internet).
 
-- **Tabuleiro (tablet/desktop):** `http://<ip-local>:3000`
-- **Jogador (celular/qualquer dispositivo):** escaneie o QR Code exibido no tabuleiro ou abra `http://<ip-local>:3000/player`
+- **Jogador (celular/desktop):** `http://<ip-local>:3000/player`
+- **Tabuleiro / Espectador (opcional):** `http://<ip-local>:3000/board`
 
 ## Como jogar
 
-1. Os jogadores abrem o link ou escaneiam o QR Code, digitam o código da sala e seus nomes (2 a 10).
-2. No tabuleiro, escolha o tamanho do grid (Fácil 15×9, Médio 20×12, Difícil 30×18) e clique em **Iniciar Jogo**.
-3. O jogo sorteia uma cor secreta para o jogador da vez. Ele dá uma dica de
-   1 palavra (e depois uma de até 2 palavras).
-4. Os outros jogadores vão até o tabuleiro e tocam na cor que acham ser a secreta.
-5. A cor correta é revelada e os pontos são calculados:
+1. Acesse `/player`, escolha seu nome e crie uma sala (com senha opcional) ou entre em uma existente.
+2. Escolha o tamanho do grid (Fácil 15×9, Médio 20×12, Difícil 30×18) ao criar a sala.
+3. Quando todos estiverem no lobby, qualquer jogador clica em **Iniciar Jogo**.
+4. O jogo sorteia uma cor secreta para o jogador da vez. Ele dá uma dica de
+   1 palavra (e depois uma de até 2 palavras), ou pode pular.
+5. Todos os outros jogadores marcam simultaneamente no tabuleiro do próprio celular.
+6. A cor correta é revelada com animação e os pontos são calculados:
 
 | Zona | Pontos |
 |------|--------|
@@ -43,7 +48,22 @@ O servidor abre na porta `3000`. Conecte todos os dispositivos à mesma rede
 | Quadrado 5×5 externo | 1 pt |
 | Dica: por marcador no 3×3 | +1 pt (máx. 9) |
 
-6. O jogo dura 2 rodadas (2–6 jogadores) ou 1 rodada (7+).
+7. O jogo dura 2 rodadas (2–6 jogadores) ou 1 rodada (7+).
+
+## Recursos
+
+- **Player-first** — todo o jogo roda pelo celular, sem precisar de tela central
+- **Tabuleiro espectador** — `/board` pode entrar em qualquer sala para exibir em TV
+- Salas com código aleatório e senha opcional
+- Marcação paralela — todos os jogadores marcam ao mesmo tempo
+- Coordenadas no tabuleiro (A1, B2, ...) em todas as telas
+- Reconexão automática (sala persistida em sessionStorage)
+- QR Code e link para compartilhar sala
+- Grid configurável em 3 tamanhos
+- Layout responsivo para celular, tablet e desktop
+- Animações, sons e vibrações
+- Expiração automática de salas após 1 hora
+- Persistência Firestore para sobreviver a restarts (cloud)
 
 ## Stack
 
@@ -54,14 +74,3 @@ O servidor abre na porta `3000`. Conecte todos os dispositivos à mesma rede
 - **QR Code:** `qrcode` (npm)
 - **Estado:** 100% no servidor, validações server-side
 - **Tema:** dark warm pastel com fonte Nunito
-
-## Recursos
-
-- Salas com código aleatório — isolamento de partidas
-- Lobby com auto-registro — jogadores entram pelo próprio dispositivo
-- QR Code gerado automaticamente
-- Grid configurável em 3 tamanhos
-- Layout responsivo para tablet (portrait e landscape) e celular
-- Animações, sons e vibrações
-- Reconexão automática e proteção contra multi-tab
-- Persistência Firestore para sobreviver a restarts (cloud)

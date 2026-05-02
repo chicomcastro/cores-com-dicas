@@ -50,6 +50,42 @@ button { font-family: inherit; cursor: pointer; }
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ---------- ROOM ENTRY ---------- */
+#room-entry {
+  align-items: center; justify-content: center;
+  flex-direction: column;
+}
+.room-entry-card {
+  display: flex; flex-direction: column; align-items: center; gap: 20px;
+  max-width: 420px; width: 90%;
+  animation: fadeIn 0.5s ease;
+}
+.room-entry-form {
+  width: 100%;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.room-entry-input {
+  font-size: 28px; padding: 16px 18px;
+  background: #241e2e; border: 2px solid #3a2e48; border-radius: 18px;
+  color: #ede6f0; outline: none; text-align: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 6px; text-transform: uppercase;
+}
+.room-entry-input::placeholder { color: #6a5d75; letter-spacing: 2px; font-size: 18px; }
+.room-entry-input:focus { border-color: #c4a7e7; box-shadow: 0 0 0 3px rgba(196,167,231,0.2); }
+.room-entry-divider {
+  display: flex; align-items: center; gap: 12px;
+  color: #6a5d75; font-size: 14px; font-weight: 700;
+}
+.room-entry-divider::before, .room-entry-divider::after {
+  content: ''; flex: 1; height: 1px; background: #3a2e48;
+}
+.big-secondary {
+  width: 100%; padding: 18px 28px; font-size: 18px; border-radius: 20px;
+}
+
 /* ---------- ROOM CODE ---------- */
 .room-code-block {
   text-align: center; margin-bottom: 18px;

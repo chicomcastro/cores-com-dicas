@@ -23,6 +23,21 @@
       </div>
     </section>
 
+    <!-- ROOM ENTRY (spectator join) -->
+    <section id="room-entry" class="screen hidden">
+      <div class="room-entry-card">
+        <h1 class="loading-title">Cores com Dicas</h1>
+        <p class="subtitle">Tabuleiro / Espectador</p>
+        <div class="room-entry-form">
+          <button id="entry-create-btn" class="primary big">Criar Nova Sala</button>
+          <div class="room-entry-divider"><span>ou</span></div>
+          <input id="entry-room-code" type="text" placeholder="Código da sala" maxlength="6" autocomplete="off" autocapitalize="characters" class="room-entry-input" />
+          <button id="entry-join-btn" class="secondary big-secondary">Entrar como Espectador</button>
+        </div>
+        <p id="entry-status" class="hint"></p>
+      </div>
+    </section>
+
     <!-- LOBBY -->
     <section id="lobby" class="screen hidden">
       <div class="lobby-grid">

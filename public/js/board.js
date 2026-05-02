@@ -95,6 +95,24 @@
     });
   }
 
+  function joinExistingRoom(code) {
+    roomCode = code;
+    sessionStorage.setItem('ccd:board-room', code);
+    socket.emit('join_room', { code });
+    socket.emit('hello_board');
+    renderRoomCode();
+    fetchQr();
+  }
+
+  // check URL for room param
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlRoom = (urlParams.get('room') || '').toUpperCase().trim();
+  if (urlRoom) {
+    roomCode = urlRoom;
+    sessionStorage.setItem('ccd:board-room', urlRoom);
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+
   socket.on('connect', () => {
     if (roomCode) {
       socket.emit('join_room', { code: roomCode });
@@ -103,13 +121,33 @@
       fetchQr();
       return;
     }
-    createNewRoom();
+    showScreen('room-entry');
   });
 
-  socket.on('join_rejected', () => {
+  socket.on('join_rejected', (d) => {
+    const reason = d?.reason || 'Sala não encontrada.';
     roomCode = null;
     sessionStorage.removeItem('ccd:board-room');
+    const statusEl = $('entry-status');
+    if (statusEl) statusEl.textContent = reason;
+    showScreen('room-entry');
+  });
+
+  /* ---------- ROOM ENTRY ---------- */
+  $('entry-create-btn').addEventListener('click', () => {
     createNewRoom();
+  });
+  $('entry-join-btn').addEventListener('click', () => {
+    const code = $('entry-room-code').value.trim().toUpperCase();
+    if (!code || code.length < 3) {
+      $('entry-status').textContent = 'Digite o código da sala.';
+      return;
+    }
+    $('entry-status').textContent = 'Conectando…';
+    joinExistingRoom(code);
+  });
+  $('entry-room-code').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') $('entry-join-btn').click();
   });
 
   function renderRoomCode() {
@@ -472,24 +510,18 @@
   }
 
   function showPlacingBanner(round) {
-    const next = (state.pendingMarkers || [])[0];
-    if (!next) {
+    const pending = state.pendingMarkers || [];
+    if (pending.length === 0) {
       placingBanner.classList.add('hidden');
       return;
     }
-    const player = state.players.find(p => p.name === next);
     placingBanner.classList.remove('hidden');
-    placingNameEl.textContent = next;
-    placingNameEl.style.color = player?.color || '#fff';
-    if (pendingSelect) {
-      placingHintEl.textContent = round === 1
-        ? 'Toque novamente para confirmar.'
-        : 'Confirme a seleção do segundo marcador.';
-    } else {
-      placingHintEl.textContent = round === 1
-        ? 'Toque na cor que acha ser a secreta.'
-        : 'Toque para adicionar o segundo marcador.';
-    }
+    const total = state.players.length - 1;
+    const placed = total - pending.length;
+    placingNameEl.textContent = `${placed}/${total} marcaram`;
+    placingNameEl.style.color = '#c4a7e7';
+    const names = pending.map(n => n).join(', ');
+    placingHintEl.textContent = `Aguardando: ${names}`;
     placingChoiceEl.classList.add('hidden');
   }
 
@@ -513,7 +545,7 @@
 
   /* ---------- SCREENS ---------- */
   function showScreen(name) {
-    ['loading', 'lobby', 'game', 'end'].forEach(s => {
+    ['loading', 'room-entry', 'lobby', 'game', 'end'].forEach(s => {
       const el = document.getElementById(s);
       if (s === name) el.classList.remove('hidden'); else el.classList.add('hidden');
     });
@@ -699,4 +731,12 @@
   });
 
   socket.on('start_rejected', (d) => toast(d?.reason || 'Não foi possível iniciar.'));
+
+  socket.on('room_expired', () => {
+    alert('A sala expirou após 1 hora. Crie uma nova sala para continuar.');
+    roomCode = null;
+    sessionStorage.removeItem('ccd:board-room');
+    state = null;
+    showScreen('room-entry');
+  });
 })();

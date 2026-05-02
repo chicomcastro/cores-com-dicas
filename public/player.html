@@ -22,14 +22,45 @@
       </div>
     </section>
 
-    <!-- ROOM CODE -->
-    <section id="room-entry" class="screen">
-      <div class="login-inner">
-        <h1>Cores com Dicas</h1>
-        <p class="subtitle">Digite o código da sala</p>
+    <!-- HOME -->
+    <section id="home" class="screen">
+      <div class="center-card">
+        <h1 class="screen-title">Cores com Dicas</h1>
+        <p class="greeting" id="home-greeting"></p>
+        <div class="home-buttons">
+          <button id="home-create-btn" class="primary big">Criar Sala</button>
+          <button id="home-join-btn" class="secondary big">Entrar em Sala</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- CREATE ROOM -->
+    <section id="create-room" class="screen">
+      <div class="center-card">
+        <h1 class="screen-title">Criar Sala</h1>
+        <div class="create-form">
+          <label class="field-label">Senha (opcional)</label>
+          <input id="create-password" type="text" placeholder="Sem senha" maxlength="20" autocomplete="off" />
+          <label class="field-label">Tamanho do tabuleiro</label>
+          <div id="create-grid-options" class="grid-size-options"></div>
+          <button id="create-room-btn" class="primary big">Criar Sala</button>
+          <button id="create-back-btn" class="secondary">Voltar</button>
+        </div>
+        <p id="create-status" class="hint"></p>
+      </div>
+    </section>
+
+    <!-- JOIN ROOM -->
+    <section id="join-room" class="screen">
+      <div class="center-card">
+        <h1 class="screen-title">Entrar em Sala</h1>
         <div class="join-form">
-          <input id="room-code-input" type="text" placeholder="Ex: AB3K" maxlength="6" autocomplete="off" autocapitalize="characters" />
-          <button id="room-join-btn" class="primary big">Entrar na Sala</button>
+          <input id="room-code-input" type="text" placeholder="Código da sala" maxlength="6" autocomplete="off" autocapitalize="characters" />
+          <div id="password-field" class="hidden">
+            <input id="room-password-input" type="text" placeholder="Senha da sala" maxlength="20" autocomplete="off" />
+          </div>
+          <button id="room-join-btn" class="primary big">Entrar</button>
+          <button id="join-back-btn" class="secondary">Voltar</button>
         </div>
         <p id="room-status" class="hint"></p>
       </div>
@@ -37,12 +68,12 @@
 
     <!-- LOGIN -->
     <section id="login" class="screen">
-      <div class="login-inner">
-        <h1>Cores com Dicas</h1>
-        <p class="subtitle">Digite seu nome para entrar</p>
+      <div class="center-card">
+        <h1 class="screen-title">Cores com Dicas</h1>
+        <p class="subtitle">Como você quer ser chamado?</p>
         <div class="join-form">
           <input id="join-name-input" type="text" placeholder="Seu nome" maxlength="14" autocomplete="off" autocapitalize="words" />
-          <button id="join-btn" class="primary big">Entrar</button>
+          <button id="join-btn" class="primary big">Continuar</button>
         </div>
         <p id="login-status" class="hint"></p>
       </div>
@@ -50,12 +81,20 @@
 
     <!-- WAITING (lobby joined) -->
     <section id="waiting" class="screen">
-      <div class="center-card">
-        <div class="badge" id="waiting-badge">Aguardando início</div>
-        <h2 id="waiting-title">Olá, <span id="waiting-name">jogador</span>!</h2>
-        <p class="hint">O jogo vai começar quando todos estiverem prontos.</p>
-        <div class="connected-dots" id="connected-dots"></div>
-        <button id="edit-name-btn" class="edit-btn">Editar nome</button>
+      <div class="center-card lobby-card">
+        <div class="lobby-room-header">
+          <span class="lobby-room-label">Sala</span>
+          <span class="lobby-room-value" id="lobby-room-code">—</span>
+          <button id="lobby-copy-code" class="copy-btn" title="Copiar código">📋</button>
+        </div>
+        <div class="lobby-name-row">
+          <h2 id="waiting-title">Olá, <span id="waiting-name">jogador</span>!</h2>
+          <button id="edit-name-btn" class="edit-btn-inline">Editar</button>
+        </div>
+        <div class="lobby-player-list" id="lobby-player-list"></div>
+        <button id="lobby-start-btn" class="primary big" disabled>Iniciar Jogo</button>
+        <p id="lobby-help" class="hint"></p>
+        <button id="lobby-leave-btn" class="secondary">Sair da Sala</button>
       </div>
     </section>
 
@@ -128,7 +167,12 @@
       </div>
       <div class="mini-board-wrap" id="mini-board-wrap">
         <div class="mini-board-pan" id="mini-board-pan">
-          <div class="mini-board" id="mini-board"></div>
+          <div class="mini-board-grid">
+            <div class="mini-corner"></div>
+            <div class="mini-col-labels" id="mini-col-labels"></div>
+            <div class="mini-row-labels" id="mini-row-labels"></div>
+            <div class="mini-board" id="mini-board"></div>
+          </div>
         </div>
         <div class="mini-board-hud">
           <button class="zoom-btn" id="mini-zoom-out" aria-label="Diminuir zoom">−</button>
@@ -144,12 +188,22 @@
 
     <!-- REVEAL / SCORES -->
     <section id="reveal" class="screen">
-      <div class="center-card">
+      <div class="reveal-top">
         <div class="badge">Rodada encerrada</div>
         <div class="score-big" id="score-big">+0</div>
         <p class="hint">Pontos nesta rodada</p>
         <div class="total-score">Total: <strong id="total-score">0</strong></div>
-        <p class="hint" id="reveal-hint">Aguarde a próxima rodada…</p>
+      </div>
+      <div class="reveal-board-wrap" id="reveal-board-wrap">
+        <div class="reveal-board-grid">
+          <div class="reveal-corner"></div>
+          <div class="reveal-col-labels" id="reveal-col-labels"></div>
+          <div class="reveal-row-labels" id="reveal-row-labels"></div>
+          <div class="reveal-board" id="reveal-board"></div>
+        </div>
+      </div>
+      <div class="reveal-footer">
+        <button id="next-round-btn" class="primary big">Próxima Rodada</button>
       </div>
     </section>
 
@@ -159,9 +213,12 @@
         <h2 id="end-title">Fim de Jogo</h2>
         <div class="score-big" id="end-score">0</div>
         <p class="hint" id="end-rank"></p>
-        <p class="hint">Confira o placar final no tabuleiro.</p>
+        <button id="end-play-again-btn" class="primary big">Jogar Novamente</button>
       </div>
     </section>
+
+    <!-- EXIT BUTTON (visible during game) -->
+    <button id="exit-room-btn" class="exit-room-btn hidden" title="Sair da sala">✕</button>
 
     <!-- MINI RANKING (sticky bottom, visible during the game) -->
     <div id="mini-rank" class="mini-rank hidden">
