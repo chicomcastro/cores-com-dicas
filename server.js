@@ -7,6 +7,7 @@ const { Server } = require('socket.io');
 const colors = require('./public/js/colors');
 
 const PORT = process.env.PORT || 3000;
+const BASE_URL = process.env.BASE_URL || null;
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -14,6 +15,73 @@ const io = new Server(server);
 const BUILD = Date.now().toString(36);
 const fs = require('fs');
 
+/* ---------- FIRESTORE (optional) ---------- */
+let db = null;
+const FIRESTORE_PROJECT = process.env.FIRESTORE_PROJECT || null;
+if (FIRESTORE_PROJECT) {
+  try {
+    const { Firestore } = require('@google-cloud/firestore');
+    db = new Firestore({ projectId: FIRESTORE_PROJECT });
+    console.log(`Firestore enabled (project: ${FIRESTORE_PROJECT})`);
+  } catch (e) {
+    console.warn('Firestore not available:', e.message);
+  }
+}
+
+const ROOMS_COLLECTION = 'rooms';
+const debounceTimers = new Map();
+function persistRoom(code) {
+  if (!db) return;
+  if (debounceTimers.has(code)) clearTimeout(debounceTimers.get(code));
+  debounceTimers.set(code, setTimeout(async () => {
+    debounceTimers.delete(code);
+    const room = rooms.get(code);
+    if (!room) {
+      try { await db.collection(ROOMS_COLLECTION).doc(code).delete(); } catch (e) {}
+      return;
+    }
+    try {
+      const snap = { ...room.state, _lastActivity: Date.now() };
+      delete snap.socketId; // strip transient socket refs
+      const players = (snap.players || []).map(p => ({ ...p, socketId: null }));
+      await db.collection(ROOMS_COLLECTION).doc(code).set({ ...snap, players }, { merge: false });
+    } catch (e) {
+      console.warn(`Firestore write failed for room ${code}:`, e.message);
+    }
+  }, 500));
+}
+
+async function loadRoomsFromFirestore() {
+  if (!db) return;
+  try {
+    const snapshot = await db.collection(ROOMS_COLLECTION).get();
+    const cutoff = Date.now() - 4 * 60 * 60 * 1000;
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      if (data._lastActivity && data._lastActivity < cutoff) {
+        await doc.ref.delete();
+        continue;
+      }
+      const code = doc.id;
+      delete data._lastActivity;
+      const state = data;
+      if (state.players) state.players.forEach(p => { p.socketId = null; });
+      rooms.set(code, {
+        state,
+        socketBindings: new Map(),
+        board: colors.generateBoard(state.gridCols || 30, state.gridRows || 18),
+        cellById: null,
+      });
+      const room = rooms.get(code);
+      room.cellById = new Map(room.board.map(c => [c.id, c]));
+      console.log(`Restored room ${code} (${state.status}, ${(state.players || []).length} players)`);
+    }
+  } catch (e) {
+    console.warn('Failed to load rooms from Firestore:', e.message);
+  }
+}
+
+/* ---------- HTML SERVING ---------- */
 function serveHtml(file) {
   const raw = fs.readFileSync(path.join(__dirname, 'public', file), 'utf8');
   const html = raw.replace(/__BUILD__/g, BUILD);
@@ -26,22 +94,25 @@ app.get('/board', serveHtml('board.html'));
 app.get('/player', serveHtml('player.html'));
 app.use(express.static(path.join(__dirname, 'public')));
 
+/* ---------- ROOM CODE GENERATION ---------- */
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function generateCode(len = 4) {
+  let code;
+  do {
+    code = '';
+    for (let i = 0; i < len; i++) code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+  } while (rooms.has(code));
+  return code;
+}
+
+/* ---------- GRID ---------- */
 const GRID_PRESETS = [
   { cols: 15, rows: 9 },
   { cols: 20, rows: 12 },
   { cols: 30, rows: 18 },
 ];
 
-let board = colors.generateBoard();
-let cellById = new Map(board.map(c => [c.id, c]));
-function getCell(col, row) {
-  return cellById.get(`C${col}-R${row}`) || null;
-}
-function rebuildBoard(cols, rows) {
-  board = colors.generateBoard(cols, rows);
-  cellById = new Map(board.map(c => [c.id, c]));
-}
-
+/* ---------- NETWORK ---------- */
 function getLocalIp() {
   for (const ifaces of Object.values(os.networkInterfaces())) {
     for (const iface of ifaces || []) {
@@ -51,17 +122,25 @@ function getLocalIp() {
   return 'localhost';
 }
 const LOCAL_IP = getLocalIp();
-const PLAYER_URL = `http://${LOCAL_IP}:${PORT}/player`;
 
-app.get('/qr', async (_req, res) => {
+function getBaseUrl(req) {
+  if (BASE_URL) return BASE_URL;
+  return `http://${LOCAL_IP}:${PORT}`;
+}
+
+app.get('/qr', async (req, res) => {
   try {
-    const qr = await QRCode.toDataURL(PLAYER_URL, { margin: 1, width: 320 });
-    res.json({ url: PLAYER_URL, ip: LOCAL_IP, qr });
+    const roomCode = req.query.room || '';
+    const base = getBaseUrl(req);
+    const url = roomCode ? `${base}/player?room=${roomCode}` : `${base}/player`;
+    const qr = await QRCode.toDataURL(url, { margin: 1, width: 320 });
+    res.json({ url, ip: LOCAL_IP, qr });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+/* ---------- GAME CONSTANTS ---------- */
 const PLAYER_COLORS = [
   '#e63946', '#4a90d9', '#2a9d8f', '#f4a261', '#7209b7',
   '#06aed5', '#80b918', '#ff006e', '#3a86ff', '#fb8500'
@@ -91,6 +170,9 @@ function isClueBlocked(text) {
   return text.split(/\s+/).some(w => BLOCKED_CLUE_WORDS.has(normalizeWord(w)));
 }
 
+/* ---------- ROOM STATE ---------- */
+const rooms = new Map();
+
 function freshState() {
   return {
     status: 'lobby',
@@ -116,17 +198,54 @@ function freshState() {
   };
 }
 
-let state = freshState();
-const socketBindings = new Map();
-
-function findPlayer(name) {
-  return state.players.find(p => p.name === name);
+function createRoom() {
+  const code = generateCode();
+  const state = freshState();
+  const board = colors.generateBoard();
+  rooms.set(code, {
+    state,
+    socketBindings: new Map(),
+    board,
+    cellById: new Map(board.map(c => [c.id, c])),
+  });
+  return code;
 }
 
-function publicState() {
+function getRoom(code) {
+  return rooms.get((code || '').toUpperCase()) || null;
+}
+
+function socketRoom(socket) {
+  return socket._roomCode || null;
+}
+
+function getRoomForSocket(socket) {
+  const code = socketRoom(socket);
+  return code ? getRoom(code) : null;
+}
+
+/* ---------- ROOM CLEANUP ---------- */
+const ROOM_TTL = 4 * 60 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, room] of rooms) {
+    if (room._lastActivity && now - room._lastActivity > ROOM_TTL) {
+      rooms.delete(code);
+      if (db) {
+        db.collection(ROOMS_COLLECTION).doc(code).delete().catch(() => {});
+      }
+      console.log(`Cleaned up room ${code}`);
+    }
+  }
+}, 10 * 60 * 1000);
+
+/* ---------- GAME LOGIC ---------- */
+function publicState(room, code) {
+  const state = room.state;
   const reveal = state.phase === 'reveal' || state.phase === 'end';
-  const connectedNames = new Set([...socketBindings.values()]);
+  const connectedNames = new Set([...room.socketBindings.values()]);
   return {
+    roomCode: code,
     status: state.status,
     phase: state.phase,
     lobbyPlayers: state.lobbyPlayers,
@@ -159,30 +278,31 @@ function publicState() {
   };
 }
 
-function broadcast() {
-  io.emit('game_state', publicState());
-  sendSecretToActive();
+function broadcast(room, code) {
+  const ps = publicState(room, code);
+  io.to(`room:${code}`).emit('game_state', ps);
+  sendSecretToActive(room, code);
+  room._lastActivity = Date.now();
+  persistRoom(code);
 }
 
-function sendSecretToActive() {
+function sendSecretToActive(room) {
+  const state = room.state;
   const active = state.players[state.activeIdx];
   if (!active) return;
-  if (state.phase !== 'clue1' && state.phase !== 'markers1' && state.phase !== 'clue2' && state.phase !== 'markers2') {
-    return;
-  }
+  if (!['clue1', 'markers1', 'clue2', 'markers2'].includes(state.phase)) return;
   if (!active.socketId) return;
-  const cell = cellById.get(state.secretCellId);
+  const cell = room.cellById.get(state.secretCellId);
   if (!cell) return;
   io.to(active.socketId).emit('your_secret', {
-    col: cell.col,
-    row: cell.row,
-    id: cell.id,
-    hsl: colors.cellHsl(cell)
+    col: cell.col, row: cell.row,
+    id: cell.id, hsl: colors.cellHsl(cell)
   });
 }
 
-function startTurn() {
-  const cell = board[Math.floor(Math.random() * board.length)];
+function startTurn(room, code) {
+  const state = room.state;
+  const cell = room.board[Math.floor(Math.random() * room.board.length)];
   state.secretCellId = cell.id;
   state.clue1 = null;
   state.clue2 = null;
@@ -192,10 +312,11 @@ function startTurn() {
   state.revealCell = null;
   state.phase = 'clue1';
   state.currentRound = Math.floor(state.turnsTaken / Math.max(1, state.players.length)) + 1;
-  broadcast();
+  broadcast(room, code);
 }
 
-function startGame(playerNames, cols, rows) {
+function startGame(room, code, playerNames, cols, rows) {
+  const state = room.state;
   const cleaned = (playerNames || [])
     .map(n => (typeof n === 'string' ? n.trim() : ''))
     .filter(Boolean);
@@ -209,33 +330,36 @@ function startGame(playerNames, cols, rows) {
   for (const p of state.players) {
     if (p.socketId) previousBindings.set(p.name, p.socketId);
   }
-  for (const [sid, name] of socketBindings.entries()) {
+  for (const [sid, name] of room.socketBindings.entries()) {
     if (!previousBindings.has(name)) previousBindings.set(name, sid);
   }
 
   const preset = GRID_PRESETS.find(p => p.cols === cols && p.rows === rows) || GRID_PRESETS[2];
-  rebuildBoard(preset.cols, preset.rows);
+  room.board = colors.generateBoard(preset.cols, preset.rows);
+  room.cellById = new Map(room.board.map(c => [c.id, c]));
 
-  state = freshState();
-  state.gridCols = preset.cols;
-  state.gridRows = preset.rows;
-  state.status = 'playing';
-  state.lobbyPlayers = shuffled;
-  state.players = shuffled.map((name, i) => ({
+  const newState = freshState();
+  newState.gridCols = preset.cols;
+  newState.gridRows = preset.rows;
+  newState.status = 'playing';
+  newState.lobbyPlayers = shuffled;
+  newState.players = shuffled.map((name, i) => ({
     name,
     color: PLAYER_COLORS[i % PLAYER_COLORS.length],
     score: 0,
     socketId: previousBindings.get(name) || null
   }));
-  state.rounds = unique.length >= 7 ? 1 : 2;
-  state.totalTurns = state.rounds * state.players.length;
-  state.activeIdx = 0;
-  state.turnsTaken = 0;
-  startTurn();
+  newState.rounds = unique.length >= 7 ? 1 : 2;
+  newState.totalTurns = newState.rounds * newState.players.length;
+  newState.activeIdx = 0;
+  newState.turnsTaken = 0;
+  room.state = newState;
+  startTurn(room, code);
   return { ok: true };
 }
 
-function submitClue(socket, payload) {
+function submitClue(room, code, socket, payload) {
+  const state = room.state;
   const active = state.players[state.activeIdx];
   if (!active) return socket.emit('clue_rejected', { reason: 'Jogo não está ativo.' });
   if (active.socketId !== socket.id) return socket.emit('clue_rejected', { reason: 'Apenas o jogador da vez pode enviar a dica.' });
@@ -248,7 +372,7 @@ function submitClue(socket, payload) {
       state.clue1 = null;
       state.phase = 'markers1';
       state.pendingMarkers = state.players.filter((_, i) => i !== state.activeIdx).map(p => p.name);
-      broadcast();
+      broadcast(room, code);
       return;
     }
     if (!raw) return socket.emit('clue_rejected', { reason: 'Digite uma dica.' });
@@ -258,7 +382,7 @@ function submitClue(socket, payload) {
     state.clue1 = raw;
     state.phase = 'markers1';
     state.pendingMarkers = state.players.filter((_, i) => i !== state.activeIdx).map(p => p.name);
-    broadcast();
+    broadcast(room, code);
     return;
   }
   if (state.phase === 'clue2' && round === 2) {
@@ -266,7 +390,7 @@ function submitClue(socket, payload) {
       state.clue2 = null;
       state.phase = 'markers2';
       state.pendingMarkers = state.players.filter((_, i) => i !== state.activeIdx).map(p => p.name);
-      broadcast();
+      broadcast(room, code);
       return;
     }
     if (!raw) return socket.emit('clue_rejected', { reason: 'Digite uma dica.' });
@@ -276,17 +400,18 @@ function submitClue(socket, payload) {
     state.clue2 = raw;
     state.phase = 'markers2';
     state.pendingMarkers = state.players.filter((_, i) => i !== state.activeIdx).map(p => p.name);
-    broadcast();
+    broadcast(room, code);
     return;
   }
   socket.emit('clue_rejected', { reason: 'Não é momento de enviar dica.' });
 }
 
-function placeMarker(payload) {
+function placeMarker(room, code, payload) {
+  const state = room.state;
   if (state.phase !== 'markers1' && state.phase !== 'markers2') return;
   const { playerName, col, row, markerIndex } = payload || {};
   if (!playerName || typeof col !== 'number' || typeof row !== 'number') return;
-  if (!getCell(col, row)) return;
+  if (!room.cellById.get(`C${col}-R${row}`)) return;
   const activeName = state.players[state.activeIdx]?.name;
   if (playerName === activeName) return;
   if (!state.players.find(p => p.name === playerName)) return;
@@ -306,15 +431,16 @@ function placeMarker(payload) {
     if (state.phase === 'markers1') {
       state.phase = 'clue2';
     } else {
-      doReveal();
+      doReveal(room, code);
       return;
     }
   }
-  broadcast();
+  broadcast(room, code);
 }
 
-function doReveal() {
-  const secret = cellById.get(state.secretCellId);
+function doReveal(room, code) {
+  const state = room.state;
+  const secret = room.cellById.get(state.secretCellId);
   if (!secret) return;
   const sc = secret.col, sr = secret.row;
   const giverName = state.players[state.activeIdx]?.name;
@@ -331,28 +457,28 @@ function doReveal() {
       if (d === 0) pts += 3;
       else if (d <= 1) pts += 2;
       else if (d <= 2) pts += 1;
-      if (d <= 1 && p.name !== giverName) {
-        giverPoints += 1;
-      }
+      if (d <= 1 && p.name !== giverName) giverPoints += 1;
     }
     roundScores[p.name] = pts;
   }
   giverPoints = Math.min(9, giverPoints);
-  if (giverName) {
-    roundScores[giverName] = (roundScores[giverName] || 0) + giverPoints;
-  }
-  for (const p of state.players) {
-    p.score += roundScores[p.name] || 0;
-  }
+  if (giverName) roundScores[giverName] = (roundScores[giverName] || 0) + giverPoints;
+  for (const p of state.players) p.score += roundScores[p.name] || 0;
+
   state.roundScores = roundScores;
   state.lastClueGiver = giverName;
   state.revealCell = { col: secret.col, row: secret.row, id: secret.id, hsl: colors.cellHsl(secret) };
   state.phase = 'reveal';
-  io.emit('reveal', { secretCell: state.revealCell, scores: roundScores, totals: state.players.map(p => ({ name: p.name, score: p.score })) });
-  broadcast();
+  io.to(`room:${code}`).emit('reveal', {
+    secretCell: state.revealCell,
+    scores: roundScores,
+    totals: state.players.map(p => ({ name: p.name, score: p.score }))
+  });
+  broadcast(room, code);
 }
 
-function nextTurn() {
+function nextTurn(room, code) {
+  const state = room.state;
   if (state.phase !== 'reveal') return;
   state.turnsTaken += 1;
   if (state.turnsTaken >= state.totalTurns) {
@@ -366,135 +492,210 @@ function nextTurn() {
         if (b.name === state.lastClueGiver) return 1;
         return 0;
       });
-    io.emit('game_over', { finalScores: state.finalScores });
-    broadcast();
+    io.to(`room:${code}`).emit('game_over', { finalScores: state.finalScores });
+    broadcast(room, code);
     return;
   }
   state.activeIdx = state.turnsTaken % state.players.length;
-  startTurn();
+  startTurn(room, code);
 }
 
-function resetGame() {
+function resetGame(room, code) {
+  const state = room.state;
   const previousNames = state.lobbyPlayers && state.lobbyPlayers.length
     ? state.lobbyPlayers
     : state.players.map(p => p.name);
-  state = freshState();
-  state.lobbyPlayers = previousNames;
-  broadcast();
+  room.state = freshState();
+  room.state.lobbyPlayers = previousNames;
+  broadcast(room, code);
 }
 
+/* ---------- SOCKET.IO ---------- */
 io.on('connection', (socket) => {
-  socket.emit('game_state', publicState());
+
+  socket.on('create_room', (payload, callback) => {
+    const code = createRoom();
+    socket._roomCode = code;
+    socket.join(`room:${code}`);
+    const room = getRoom(code);
+    room._lastActivity = Date.now();
+    const cb = typeof callback === 'function' ? callback : (typeof payload === 'function' ? payload : null);
+    if (cb) cb({ code });
+    socket.emit('game_state', publicState(room, code));
+  });
+
+  socket.on('join_room', (payload) => {
+    const code = (payload?.code || '').toUpperCase().trim();
+    const room = getRoom(code);
+    if (!room) return socket.emit('join_rejected', { reason: 'Sala não encontrada.' });
+    socket._roomCode = code;
+    socket.join(`room:${code}`);
+    socket.emit('room_joined', { code });
+    socket.emit('game_state', publicState(room, code));
+  });
 
   socket.on('hello_board', () => {
+    const code = socketRoom(socket);
+    if (!code) return;
     socket.join('board');
-    socket.emit('game_state', publicState());
+    const room = getRoom(code);
+    if (room) socket.emit('game_state', publicState(room, code));
   });
 
   socket.on('join', (payload) => {
+    const code = socketRoom(socket) || (payload?.room || '').toUpperCase().trim();
+    const room = getRoom(code);
+    if (!room) return socket.emit('join_rejected', { reason: 'Sala não encontrada.' });
+
+    if (!socket._roomCode) {
+      socket._roomCode = code;
+      socket.join(`room:${code}`);
+    }
+
     const name = payload && typeof payload.playerName === 'string' ? payload.playerName.trim() : '';
     if (!name) return socket.emit('join_rejected', { reason: 'Nome inválido.' });
     if (name.length > 14) return socket.emit('join_rejected', { reason: 'Nome muito longo (máx. 14 caracteres).' });
+    const state = room.state;
 
     if (state.status === 'lobby') {
       if (state.lobbyPlayers.includes(name)) {
-        const alreadyBound = [...socketBindings.entries()].find(([, n]) => n === name);
+        const alreadyBound = [...room.socketBindings.entries()].find(([, n]) => n === name);
         if (alreadyBound && alreadyBound[0] !== socket.id) {
-          socketBindings.delete(alreadyBound[0]);
+          room.socketBindings.delete(alreadyBound[0]);
         }
       } else {
         if (state.lobbyPlayers.length >= 10) {
           return socket.emit('join_rejected', { reason: 'Máximo de 10 jogadores atingido.' });
         }
-        const oldName = socketBindings.get(socket.id);
+        const oldName = room.socketBindings.get(socket.id);
         if (oldName && oldName !== name) {
           state.lobbyPlayers = state.lobbyPlayers.filter(n => n !== oldName);
         }
         state.lobbyPlayers.push(name);
       }
-      socketBindings.set(socket.id, name);
+      room.socketBindings.set(socket.id, name);
       socket.emit('join_accepted', { playerName: name });
-      broadcast();
+      broadcast(room, code);
       return;
     }
 
     const player = state.players.find(p => p.name === name);
     if (!player) return socket.emit('join_rejected', { reason: 'Jogador não está na partida.' });
     player.socketId = socket.id;
-    socketBindings.set(socket.id, name);
+    room.socketBindings.set(socket.id, name);
     socket.emit('join_accepted', { playerName: name, color: player.color });
-    sendSecretToActive();
-    broadcast();
+    sendSecretToActive(room);
+    broadcast(room, code);
   });
 
   socket.on('kick_player', (payload) => {
-    if (state.status !== 'lobby') return;
+    const code = socketRoom(socket);
+    const room = code && getRoom(code);
+    if (!room || room.state.status !== 'lobby') return;
     const name = payload && typeof payload.playerName === 'string' ? payload.playerName.trim() : '';
     if (!name) return;
-    state.lobbyPlayers = state.lobbyPlayers.filter(n => n !== name);
-    const boundSocket = [...socketBindings.entries()].find(([, n]) => n === name);
+    room.state.lobbyPlayers = room.state.lobbyPlayers.filter(n => n !== name);
+    const boundSocket = [...room.socketBindings.entries()].find(([, n]) => n === name);
     if (boundSocket) {
-      socketBindings.delete(boundSocket[0]);
+      room.socketBindings.delete(boundSocket[0]);
       io.to(boundSocket[0]).emit('kicked');
     }
-    broadcast();
+    broadcast(room, code);
   });
 
   socket.on('start_game', (payload) => {
-    if (state.status !== 'lobby') return;
-    const names = payload && Array.isArray(payload.players) ? payload.players : state.lobbyPlayers;
+    const code = socketRoom(socket);
+    const room = code && getRoom(code);
+    if (!room || room.state.status !== 'lobby') return;
+    const names = payload && Array.isArray(payload.players) ? payload.players : room.state.lobbyPlayers;
     const cols = payload && typeof payload.cols === 'number' ? payload.cols : 30;
     const rows = payload && typeof payload.rows === 'number' ? payload.rows : 18;
-    const result = startGame(names, cols, rows);
-    if (!result.ok) {
-      socket.emit('start_rejected', { reason: result.reason });
-    }
+    const result = startGame(room, code, names, cols, rows);
+    if (!result.ok) socket.emit('start_rejected', { reason: result.reason });
   });
 
-  socket.on('submit_clue', (payload) => submitClue(socket, payload));
+  socket.on('submit_clue', (payload) => {
+    const code = socketRoom(socket);
+    const room = code && getRoom(code);
+    if (!room) return;
+    submitClue(room, code, socket, payload);
+  });
 
-  socket.on('place_marker', (payload) => placeMarker(payload));
+  socket.on('place_marker', (payload) => {
+    const code = socketRoom(socket);
+    const room = code && getRoom(code);
+    if (!room) return;
+    placeMarker(room, code, payload);
+  });
 
   socket.on('confirm_markers', () => {
+    const code = socketRoom(socket);
+    const room = code && getRoom(code);
+    if (!room) return;
+    const state = room.state;
     if (state.phase === 'markers1' && state.pendingMarkers.length === 0) {
       state.phase = 'clue2';
-      broadcast();
+      broadcast(room, code);
     } else if (state.phase === 'markers2' && state.pendingMarkers.length === 0) {
-      doReveal();
+      doReveal(room, code);
     }
   });
 
-  socket.on('next_round', () => nextTurn());
+  socket.on('next_round', () => {
+    const code = socketRoom(socket);
+    const room = code && getRoom(code);
+    if (!room) return;
+    nextTurn(room, code);
+  });
 
   socket.on('change_active_player', (payload) => {
-    if (state.status !== 'playing') return;
-    if (state.phase === 'reveal' || state.phase === 'end') return;
+    const code = socketRoom(socket);
+    const room = code && getRoom(code);
+    if (!room || room.state.status !== 'playing') return;
+    if (room.state.phase === 'reveal' || room.state.phase === 'end') return;
     const name = payload && typeof payload.playerName === 'string' ? payload.playerName.trim() : '';
     if (!name) return;
-    const idx = state.players.findIndex(p => p.name === name);
+    const idx = room.state.players.findIndex(p => p.name === name);
     if (idx < 0) return;
-    state.activeIdx = idx;
-    startTurn();
+    room.state.activeIdx = idx;
+    startTurn(room, code);
   });
 
-  socket.on('reset_game', () => resetGame());
+  socket.on('reset_game', () => {
+    const code = socketRoom(socket);
+    const room = code && getRoom(code);
+    if (!room) return;
+    resetGame(room, code);
+  });
 
   socket.on('disconnect', () => {
-    const name = socketBindings.get(socket.id);
-    socketBindings.delete(socket.id);
+    const code = socketRoom(socket);
+    const room = code && getRoom(code);
+    if (!room) return;
+    const name = room.socketBindings.get(socket.id);
+    room.socketBindings.delete(socket.id);
     if (!name) return;
-    const player = state.players.find(p => p.name === name);
-    if (player && player.socketId === socket.id) {
-      player.socketId = null;
-    }
-    broadcast();
+    const player = room.state.players.find(p => p.name === name);
+    if (player && player.socketId === socket.id) player.socketId = null;
+    broadcast(room, code);
   });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('-----------------------------------------');
-  console.log(' Cores com Dicas');
-  console.log(`  Tabuleiro:  http://${LOCAL_IP}:${PORT}/board`);
-  console.log(`  Jogador:    ${PLAYER_URL}`);
-  console.log('-----------------------------------------');
-});
+/* ---------- START ---------- */
+async function start() {
+  await loadRoomsFromFirestore();
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log('-----------------------------------------');
+    console.log(' Cores com Dicas');
+    if (BASE_URL) {
+      console.log(`  URL: ${BASE_URL}`);
+    } else {
+      console.log(`  Tabuleiro:  http://${LOCAL_IP}:${PORT}/board`);
+      console.log(`  Jogador:    http://${LOCAL_IP}:${PORT}/player`);
+    }
+    console.log(`  Rooms: ${rooms.size} restored`);
+    console.log('-----------------------------------------');
+  });
+}
+
+start();

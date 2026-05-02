@@ -1,0 +1,61 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+  pages: write
+
+jobs:
+  deploy-cloud-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/337821355443/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deploy@chico-sa.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy cores-com-dicas \
+            --project=chico-sa \
+            --region=southamerica-east1 \
+            --source=. \
+            --allow-unauthenticated \
+            --port=8080 \
+            --session-affinity \
+            --min-instances=0 \
+            --max-instances=2 \
+            --memory=256Mi \
+            --cpu=1 \
+            --timeout=3600 \
+            --set-env-vars="FIRESTORE_PROJECT=chico-sa,BASE_URL=https://cores-com-dicas-4oo37yjdva-rj.a.run.app"
+
+  deploy-pages:
+    runs-on: ubuntu-latest
+    needs: deploy-cloud-run
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v4
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

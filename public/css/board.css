@@ -50,6 +50,25 @@ button { font-family: inherit; cursor: pointer; }
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ---------- ROOM CODE ---------- */
+.room-code-block {
+  text-align: center; margin-bottom: 18px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(196,167,231,0.10), rgba(142,197,232,0.10));
+  border: 2px solid #3a2e48; border-radius: 20px;
+}
+.room-code-label {
+  font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+  color: #9a8da0; font-weight: 800; margin-bottom: 4px;
+}
+.room-code {
+  font-size: 48px; font-weight: 900; letter-spacing: 10px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: #ede6f0;
+  background: linear-gradient(135deg, #c4a7e7, #8ec5e8);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
 /* ---------- LOBBY ---------- */
 #lobby {
   padding: 32px 48px;
@@ -153,7 +172,15 @@ button { font-family: inherit; cursor: pointer; }
 .qr-url {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 18px; color: #8ec5e8; margin: 4px 0 0;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
 }
+.copy-btn {
+  background: none; border: 1px solid #3a2e48; border-radius: 8px;
+  padding: 4px 8px; font-size: 16px; cursor: pointer;
+  transition: all 0.15s;
+}
+.copy-btn:hover { border-color: #c4a7e7; background: #241e2e; }
+.copy-btn:active { transform: scale(0.94); }
 #connected-players { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 #connected-players li {
   background: #241e2e; border-radius: 999px; padding: 6px 14px;

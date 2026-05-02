@@ -5,8 +5,9 @@
 
   let state = null;
   let myName = sessionStorage.getItem('ccd:name') || null;
+  let myRoom = sessionStorage.getItem('ccd:room') || null;
   let mySecret = null;
-  let pendingPick = null; // { col, row } in mini-board
+  let pendingPick = null;
 
   // mini-board state
   let miniCells = [];
@@ -14,6 +15,11 @@
   let miniCols = 0, miniRows = 0;
   let zoom = 1;
   let panX = 0, panY = 0;
+
+  // check URL for room code
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlRoom = (urlParams.get('room') || '').toUpperCase().trim();
+  if (urlRoom) myRoom = urlRoom;
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,12 +39,12 @@
   function coordOf(c) { return `${colLabel(c.col)}${rowLabel(c.row)}`; }
 
   function showScreen(name) {
-    ['loading', 'login', 'waiting', 'secret', 'wait-turn', 'place-marker', 'reveal', 'end'].forEach(s => {
+    ['loading', 'room-entry', 'login', 'waiting', 'secret', 'wait-turn', 'place-marker', 'reveal', 'end'].forEach(s => {
       const el = document.getElementById(s);
       if (!el) return;
       if (s === name) el.classList.add('active'); else el.classList.remove('active');
     });
-    const showRank = name !== 'loading' && name !== 'login' && name !== 'waiting' && name !== 'end';
+    const showRank = !['loading', 'room-entry', 'login', 'waiting', 'end'].includes(name);
     document.body.classList.toggle('has-rank', showRank);
     $('mini-rank').classList.toggle('hidden', !showRank);
   }
@@ -84,7 +90,6 @@
     });
   }
   function notifyMyTurn(kind) {
-    // user gesture might not have happened yet on first turn — try anyway
     if (kind === 'clue') {
       chime([{ f: 660, d: 120 }, { f: 880, d: 180 }]);
       vibrate([80, 40, 120]);
@@ -94,14 +99,30 @@
     }
   }
 
-  // unlock audio context on first interaction
-  function unlockAudioOnce() {
-    ensureAudio();
-    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-  }
   ['touchstart', 'click', 'keydown'].forEach(ev => {
-    document.addEventListener(ev, unlockAudioOnce, { once: true, passive: true });
+    document.addEventListener(ev, function unlock() {
+      ensureAudio();
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    }, { once: true, passive: true });
   });
+
+  /* ---------- ROOM ENTRY ---------- */
+  const roomCodeInput = $('room-code-input');
+  const roomJoinBtn = $('room-join-btn');
+  const roomStatus = $('room-status');
+
+  roomJoinBtn.addEventListener('click', joinRoom);
+  roomCodeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
+
+  function joinRoom() {
+    const code = roomCodeInput.value.trim().toUpperCase();
+    if (!code || code.length < 3) { roomStatus.textContent = 'Digite o código da sala.'; return; }
+    myRoom = code;
+    sessionStorage.setItem('ccd:room', code);
+    roomStatus.textContent = 'Conectando…';
+    roomJoinBtn.disabled = true;
+    socket.emit('join_room', { code });
+  }
 
   /* ---------- LOGIN ---------- */
   const joinNameInput = $('join-name-input');
@@ -114,7 +135,7 @@
   function attemptJoin() {
     const name = joinNameInput.value.trim();
     if (!name) { loginStatus.textContent = 'Digite um nome.'; return; }
-    socket.emit('join', { playerName: name });
+    socket.emit('join', { playerName: name, room: myRoom });
     loginStatus.textContent = 'Entrando…';
     joinBtn.disabled = true;
   }
@@ -164,7 +185,6 @@
     }
   }
 
-  // press-and-hold reveal
   let pressing = false;
   function onPressStart(e) {
     pressing = true;
@@ -280,7 +300,6 @@
     }
   }
 
-  // partial score for active player based on markers placed inside the 3x3
   function computeActivePartialScore() {
     if (!mySecret) return 0;
     const sc = mySecret.col, sr = mySecret.row;
@@ -452,7 +471,6 @@
   $('mini-zoom-out').addEventListener('click', (e) => { e.stopPropagation(); setZoom(zoom - 0.5); });
   $('mini-zoom-reset').addEventListener('click', (e) => { e.stopPropagation(); zoom = 1; panX = 0; panY = 0; applyTransform(); });
 
-  // pinch + pan
   const pointers = new Map();
   let pinchStart = null;
   let panStart = null;
@@ -496,7 +514,6 @@
   miniWrap.addEventListener('pointercancel', cancelPointer);
   miniWrap.addEventListener('pointerleave', cancelPointer);
 
-  // suppress click that came from a pan/pinch gesture
   miniBoard.addEventListener('click', (e) => {
     if (movedSinceDown) {
       e.stopPropagation();
@@ -505,7 +522,6 @@
     }
   }, true);
 
-  // wheel zoom (desktop)
   miniWrap.addEventListener('wheel', (e) => {
     e.preventDefault();
     const delta = -Math.sign(e.deltaY) * 0.2;
@@ -561,7 +577,7 @@
 
   function route() {
     if (!state) { showScreen('loading'); return; }
-
+    if (!myRoom) { showScreen('room-entry'); return; }
     if (!myName) { showScreen('login'); return; }
 
     const myPlayer = state.players.find(p => p.name === myName);
@@ -596,7 +612,6 @@
 
     renderMiniRank();
 
-    // detect transitions to fire turn cues
     const turnChanged = prevActive !== state.activeName || prevPhase !== phase;
     const myTurnToClue = (phase === 'clue1' || phase === 'clue2') && isActive;
     const pendingFirst = (state.pendingMarkers || [])[0];
@@ -652,22 +667,33 @@
 
   /* ---------- SOCKET ---------- */
   socket.on('connect', () => {
-    if (myName) socket.emit('join', { playerName: myName });
+    if (myRoom) {
+      socket.emit('join_room', { code: myRoom });
+    }
+  });
+
+  socket.on('room_joined', (d) => {
+    myRoom = d.code;
+    sessionStorage.setItem('ccd:room', myRoom);
+    roomJoinBtn.disabled = false;
+    roomStatus.textContent = '';
+    if (myName) {
+      socket.emit('join', { playerName: myName, room: myRoom });
+    } else {
+      showScreen('login');
+    }
   });
 
   socket.on('game_state', (s) => {
     const prev = state;
     state = s;
-    // if turn changed or phase advanced past markers, drop old pendingPick
     if (prev) {
       if (prev.activeName !== s.activeName || prev.phase !== s.phase) {
         clearPendingPick();
       }
     }
-    // drop stale secret when not in an active phase or no longer active
     const inActivePhase = ['clue1', 'markers1', 'clue2', 'markers2'].includes(s.phase);
     if (!inActivePhase || s.activeName !== myName) {
-      // keep mySecret only while we're the active player in an active phase
       if (s.activeName !== myName) mySecret = null;
     }
     route();
@@ -691,7 +717,16 @@
   });
 
   socket.on('join_rejected', (d) => {
-    loginStatus.textContent = d?.reason || 'Erro ao entrar.';
+    const reason = d?.reason || 'Erro ao entrar.';
+    if (!myRoom || reason === 'Sala não encontrada.') {
+      roomStatus.textContent = reason;
+      roomJoinBtn.disabled = false;
+      myRoom = null;
+      sessionStorage.removeItem('ccd:room');
+      showScreen('room-entry');
+      return;
+    }
+    loginStatus.textContent = reason;
     joinBtn.disabled = false;
     myName = null;
     sessionStorage.removeItem('ccd:name');

@@ -7,11 +7,17 @@
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["hues-and-cues", "color-game", "multiplayer", "socket.io"],
+  "keywords": [
+    "hues-and-cues",
+    "color-game",
+    "multiplayer",
+    "socket.io"
+  ],
   "license": "MIT",
   "dependencies": {
+    "@google-cloud/firestore": "^8.5.0",
     "express": "^4.19.2",
-    "socket.io": "^4.7.5",
-    "qrcode": "^1.5.3"
+    "qrcode": "^1.5.3",
+    "socket.io": "^4.7.5"
   }
 }

@@ -42,10 +42,14 @@
         </div>
 
         <div class="lobby-right">
+          <div class="room-code-block">
+            <div class="room-code-label">Código da sala</div>
+            <div class="room-code" id="room-code">—</div>
+          </div>
           <h2>Conecte os jogadores</h2>
-          <p class="hint">Escaneie o QR Code ou abra o link abaixo em qualquer dispositivo na mesma rede.</p>
+          <p class="hint">Escaneie o QR Code ou abra o link e digite o código da sala.</p>
           <div id="qr-wrap"><img id="qr-img" alt="QR Code" /></div>
-          <p id="qr-url" class="qr-url"></p>
+          <p class="qr-url"><span id="qr-url"></span><button id="copy-url-btn" class="copy-btn" title="Copiar link">📋</button></p>
           <div class="connected-list">
             <h3>Conectados</h3>
             <ul id="connected-players"></ul>

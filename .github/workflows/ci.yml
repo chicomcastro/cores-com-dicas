@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verify server starts
+        run: |
+          node server.js &
+          sleep 3
+          curl -sf http://localhost:3000/board > /dev/null
+          curl -sf http://localhost:3000/player > /dev/null
+          curl -sf http://localhost:3000/qr > /dev/null
+          kill %1

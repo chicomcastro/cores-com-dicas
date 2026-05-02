@@ -1,10 +1,18 @@
 # Cores com Dicas
 
-Jogo web multiplayer local inspirado em **Hues and Cues**. Um tablet funciona
+Jogo web multiplayer inspirado em **Hues and Cues**. Um tablet funciona
 como tabuleiro central e cada jogador usa o próprio dispositivo para ver sua cor
 secreta e enviar dicas.
 
-## Como rodar
+## Jogar Online
+
+Acesse o tabuleiro em qualquer navegador:
+
+**[cores-com-dicas-4oo37yjdva-rj.a.run.app/board](https://cores-com-dicas-4oo37yjdva-rj.a.run.app/board)**
+
+Um código de sala será gerado. Compartilhe com os jogadores para que entrem pelo link ou QR Code.
+
+## Rodar local
 
 Pré-requisito: Node.js 18+.
 
@@ -21,7 +29,7 @@ O servidor abre na porta `3000`. Conecte todos os dispositivos à mesma rede
 
 ## Como jogar
 
-1. Os jogadores abrem o link ou escaneiam o QR Code e digitam seus nomes (2 a 10).
+1. Os jogadores abrem o link ou escaneiam o QR Code, digitam o código da sala e seus nomes (2 a 10).
 2. No tabuleiro, escolha o tamanho do grid (Fácil 15×9, Médio 20×12, Difícil 30×18) e clique em **Iniciar Jogo**.
 3. O jogo sorteia uma cor secreta para o jogador da vez. Ele dá uma dica de
    1 palavra (e depois uma de até 2 palavras).
@@ -41,15 +49,19 @@ O servidor abre na porta `3000`. Conecte todos os dispositivos à mesma rede
 
 - **Server:** Node.js + Express + Socket.IO
 - **Front:** HTML / CSS / JS puros (sem framework, sem build)
+- **Persistência:** Firestore (opcional, para cloud)
+- **Deploy:** Cloud Run (serverless, com WebSocket)
 - **QR Code:** `qrcode` (npm)
 - **Estado:** 100% no servidor, validações server-side
 - **Tema:** dark warm pastel com fonte Nunito
 
 ## Recursos
 
+- Salas com código aleatório — isolamento de partidas
 - Lobby com auto-registro — jogadores entram pelo próprio dispositivo
-- QR Code gerado automaticamente com IP da rede local
+- QR Code gerado automaticamente
 - Grid configurável em 3 tamanhos
 - Layout responsivo para tablet (portrait e landscape) e celular
-- Animações e transições suaves
+- Animações, sons e vibrações
 - Reconexão automática e proteção contra multi-tab
+- Persistência Firestore para sobreviver a restarts (cloud)

@@ -63,6 +63,20 @@ button, input { font-family: inherit; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---------- ROOM ENTRY ---------- */
+#room-entry { padding-top: 36px; }
+#room-code-input {
+  font-size: 28px; padding: 16px 18px;
+  background: #241e2e; border: 2px solid #3a2e48; border-radius: 18px;
+  color: #ede6f0; outline: none; text-align: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 6px; text-transform: uppercase;
+}
+#room-code-input::placeholder { color: #6a5d75; letter-spacing: 2px; font-size: 18px; }
+#room-code-input:focus { border-color: #c4a7e7; box-shadow: 0 0 0 3px rgba(196,167,231,0.2); }
+
 /* ---------- JOIN FORM ---------- */
 .join-form {
   display: flex; flex-direction: column; gap: 12px;

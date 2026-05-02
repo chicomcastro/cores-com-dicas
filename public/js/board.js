@@ -9,8 +9,9 @@
   let cellEls = [];
   let placingPlayerName = null;
   let placingChoice = null;
-  let pendingSelect = null; // { col, row } for double-click confirm
+  let pendingSelect = null;
   let lastPhase = null;
+  let roomCode = sessionStorage.getItem('ccd:board-room') || null;
   let soundOn = (localStorage.getItem('ccd:sound') !== '0');
 
   function colLabel(i) {
@@ -81,6 +82,57 @@
   }
 
   const $ = (id) => document.getElementById(id);
+
+  /* ---------- ROOM CREATION ---------- */
+  function createNewRoom() {
+    socket.emit('create_room', null, (resp) => {
+      if (!resp || !resp.code) return;
+      roomCode = resp.code;
+      sessionStorage.setItem('ccd:board-room', roomCode);
+      renderRoomCode();
+      fetchQr();
+      socket.emit('hello_board');
+    });
+  }
+
+  socket.on('connect', () => {
+    if (roomCode) {
+      socket.emit('join_room', { code: roomCode });
+      socket.emit('hello_board');
+      renderRoomCode();
+      fetchQr();
+      return;
+    }
+    createNewRoom();
+  });
+
+  socket.on('join_rejected', () => {
+    roomCode = null;
+    sessionStorage.removeItem('ccd:board-room');
+    createNewRoom();
+  });
+
+  function renderRoomCode() {
+    const el = $('room-code');
+    if (el) el.textContent = roomCode || '—';
+  }
+
+  let playerUrl = '';
+  $('copy-url-btn').addEventListener('click', () => {
+    if (!playerUrl) return;
+    navigator.clipboard.writeText(playerUrl).then(() => {
+      $('copy-url-btn').textContent = '✓';
+      setTimeout(() => { $('copy-url-btn').textContent = '📋'; }, 1500);
+    }).catch(() => {});
+  });
+
+  function fetchQr() {
+    const param = roomCode ? `?room=${roomCode}` : '';
+    fetch(`/qr${param}`).then(r => r.json()).then(d => {
+      if (d.qr) $('qr-img').src = d.qr;
+      if (d.url) { playerUrl = d.url; $('qr-url').textContent = d.url; }
+    }).catch(() => {});
+  }
 
   /* ---------- LOBBY ---------- */
   const lobbyPlayersEl = $('lobby-players');
@@ -165,12 +217,6 @@
       connectedListEl.appendChild(li);
     });
   }
-
-  /* ---------- QR CODE ---------- */
-  fetch('/qr').then(r => r.json()).then(d => {
-    if (d.qr) document.getElementById('qr-img').src = d.qr;
-    if (d.url) document.getElementById('qr-url').textContent = d.url;
-  }).catch(() => {});
 
   /* ---------- BOARD GRID ---------- */
   const boardGrid = $('board-grid');
@@ -310,7 +356,6 @@
       el.classList.remove('secret-reveal', 'score-3x3', 'score-5x5', 'revealed');
     });
     if (!state) return;
-    // re-apply pending-select highlight if still valid
     if (pendingSelect) {
       const el = cellEl(pendingSelect.col, pendingSelect.row);
       const validPhase = state.phase === 'markers1' || state.phase === 'markers2';
@@ -340,7 +385,6 @@
     if (state.revealCell) {
       const el = cellEl(state.revealCell.col, state.revealCell.row);
       if (el) el.classList.add('secret-reveal');
-      // Highlight scoring zones
       for (let dr = -2; dr <= 2; dr++) {
         for (let dc = -2; dc <= 2; dc++) {
           const c = state.revealCell.col + dc, r = state.revealCell.row + dr;
@@ -600,17 +644,21 @@
   });
 
   /* ---------- SOCKET ---------- */
-  socket.on('connect', () => socket.emit('hello_board'));
-
   socket.on('game_state', (s) => {
     const wasEnded = state && state.phase === 'end';
     const prevPhase = lastPhase;
     const prevActive = state ? state.activeName : null;
     state = s;
+    if (s.roomCode) {
+      roomCode = s.roomCode;
+      sessionStorage.setItem('ccd:board-room', roomCode);
+      renderRoomCode();
+    }
 
     if (s.status === 'lobby') {
       renderLobby();
       renderConnected();
+      renderRoomCode();
       showScreen('lobby');
       stopConfetti();
       lastPhase = null;
