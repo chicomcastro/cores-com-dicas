@@ -57,12 +57,18 @@
     <!-- GAME -->
     <section id="game" class="screen hidden">
       <div class="board-area">
-        <div id="board-grid" class="board-grid"></div>
+        <div id="board-wrap" class="board-wrap">
+          <div id="board-corner" class="board-corner"></div>
+          <div id="board-col-labels" class="board-col-labels"></div>
+          <div id="board-row-labels" class="board-row-labels"></div>
+          <div id="board-grid" class="board-grid"></div>
+        </div>
       </div>
       <aside class="sidebar">
         <header class="round-header">
           <div class="round-label">Rodada <span id="round-num">1</span>/<span id="round-total">2</span></div>
           <div class="turn-label">Turno <span id="turn-num">1</span>/<span id="turn-total">6</span></div>
+          <button id="sound-toggle" class="icon-btn" title="Som" aria-label="Alternar som">🔊</button>
         </header>
 
         <div class="active-card">
@@ -98,7 +104,19 @@
         <div class="actions">
           <button id="next-round-btn" class="primary hidden">Próxima Rodada ▶</button>
           <button id="play-again-btn" class="primary hidden">Jogar Novamente</button>
+          <button id="reset-round-btn" class="secondary">Resetar rodada</button>
           <button id="stop-game-btn" class="secondary">Encerrar jogo</button>
+        </div>
+
+        <div id="reset-round-modal" class="modal hidden" role="dialog" aria-modal="true">
+          <div class="modal-card">
+            <h3>Resetar rodada</h3>
+            <p class="hint">A cor secreta será resorteada e dicas/marcadores descartados. O jogador da vez continua o mesmo.</p>
+            <div class="modal-actions">
+              <button id="reset-round-confirm" class="primary">Confirmar</button>
+              <button id="reset-round-cancel" class="secondary">Cancelar</button>
+            </div>
+          </div>
         </div>
       </aside>
     </section>

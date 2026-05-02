@@ -240,11 +240,19 @@ function submitClue(socket, payload) {
   if (!active) return socket.emit('clue_rejected', { reason: 'Jogo não está ativo.' });
   if (active.socketId !== socket.id) return socket.emit('clue_rejected', { reason: 'Apenas o jogador da vez pode enviar a dica.' });
   const round = payload && payload.round;
+  const skip = !!(payload && payload.skip);
   const raw = (payload && typeof payload.clue === 'string') ? payload.clue.trim() : '';
-  if (!raw) return socket.emit('clue_rejected', { reason: 'Digite uma dica.' });
-  const words = raw.split(/\s+/);
 
   if (state.phase === 'clue1' && round === 1) {
+    if (skip) {
+      state.clue1 = null;
+      state.phase = 'markers1';
+      state.pendingMarkers = state.players.filter((_, i) => i !== state.activeIdx).map(p => p.name);
+      broadcast();
+      return;
+    }
+    if (!raw) return socket.emit('clue_rejected', { reason: 'Digite uma dica.' });
+    const words = raw.split(/\s+/);
     if (words.length !== 1) return socket.emit('clue_rejected', { reason: 'Use exatamente 1 palavra.' });
     if (isClueBlocked(raw)) return socket.emit('clue_rejected', { reason: 'Nomes de cores não são permitidos.' });
     state.clue1 = raw;
@@ -254,6 +262,15 @@ function submitClue(socket, payload) {
     return;
   }
   if (state.phase === 'clue2' && round === 2) {
+    if (skip) {
+      state.clue2 = null;
+      state.phase = 'markers2';
+      state.pendingMarkers = state.players.filter((_, i) => i !== state.activeIdx).map(p => p.name);
+      broadcast();
+      return;
+    }
+    if (!raw) return socket.emit('clue_rejected', { reason: 'Digite uma dica.' });
+    const words = raw.split(/\s+/);
     if (words.length < 1 || words.length > 2) return socket.emit('clue_rejected', { reason: 'Use até 2 palavras.' });
     if (isClueBlocked(raw)) return socket.emit('clue_rejected', { reason: 'Nomes de cores não são permitidos.' });
     state.clue2 = raw;
@@ -448,6 +465,17 @@ io.on('connection', (socket) => {
   });
 
   socket.on('next_round', () => nextTurn());
+
+  socket.on('change_active_player', (payload) => {
+    if (state.status !== 'playing') return;
+    if (state.phase === 'reveal' || state.phase === 'end') return;
+    const name = payload && typeof payload.playerName === 'string' ? payload.playerName.trim() : '';
+    if (!name) return;
+    const idx = state.players.findIndex(p => p.name === name);
+    if (idx < 0) return;
+    state.activeIdx = idx;
+    startTurn();
+  });
 
   socket.on('reset_game', () => resetGame());
 
