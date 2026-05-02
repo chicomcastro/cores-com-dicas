@@ -326,6 +326,9 @@ button { font-family: inherit; cursor: pointer; }
 .modal-card ul li button:hover { background: #2a2236; }
 .modal-card ul li button[disabled] { opacity: 0.4; cursor: not-allowed; }
 .modal-card ul li .badge-active { font-size: 11px; color: #c4a7e7; text-transform: uppercase; letter-spacing: 1px; margin-left: auto; font-weight: 800; }
+.modal-actions { display: flex; gap: 10px; }
+.modal-actions .primary { flex: 1; padding: 14px; font-size: 16px; border-radius: 14px; }
+.modal-actions .secondary { flex: 0 0 auto; }
 .active-card {
   background: linear-gradient(135deg, #2e2440, #1e2838);
   border: 2px solid #3e3458;
@@ -491,9 +494,10 @@ button { font-family: inherit; cursor: pointer; }
   .board-area { flex: 1 1 0; width: 100%; min-height: 50vh; }
   .sidebar {
     width: 100%; flex: 0 0 auto;
-    flex-direction: row; flex-wrap: wrap; gap: 10px;
+    flex-direction: column; gap: 10px;
+    padding: 14px;
   }
-  .sidebar > * { flex: 1 1 auto; min-width: 140px; }
+  .round-header { flex-wrap: wrap; }
   .scoreboard { width: 100%; }
   #scoreboard { flex-direction: row; flex-wrap: wrap; gap: 6px; }
   #scoreboard li { flex: 1 1 auto; min-width: 120px; }

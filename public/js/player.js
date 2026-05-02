@@ -168,6 +168,7 @@
   let pressing = false;
   function onPressStart(e) {
     pressing = true;
+    if (mySecret) secretColor.style.background = mySecret.hsl;
     setSecretRevealed(true);
     if (e.cancelable) e.preventDefault();
   }
@@ -175,6 +176,7 @@
     if (!pressing) return;
     pressing = false;
     setSecretRevealed(false);
+    secretColor.style.background = '#555';
   }
   secretColor.addEventListener('pointerdown', onPressStart);
   secretColor.addEventListener('pointerup', onPressEnd);
@@ -184,7 +186,7 @@
 
   function renderSecret() {
     if (!mySecret) return;
-    secretColor.style.background = mySecret.hsl;
+    secretColor.style.background = '#555';
     setSecretRevealed(false);
     secretIdEl.textContent = coordOf(mySecret);
     const round = state.phase === 'clue1' ? 1 : 2;
@@ -196,6 +198,16 @@
     clueError.textContent = '';
     clueSend.disabled = false;
     clueSkip.disabled = false;
+    renderSecretActiveInfo();
+  }
+
+  function renderSecretActiveInfo() {
+    const info = $('secret-active-info');
+    if (!mySecret || !state) { info.classList.add('hidden'); return; }
+    const partial = computeActivePartialScore();
+    info.classList.remove('hidden');
+    $('secret-coords').textContent = coordOf(mySecret);
+    $('secret-partial').textContent = '+' + partial;
   }
 
   clueSend.addEventListener('click', sendClue);
@@ -344,7 +356,7 @@
     el.style.setProperty('--my-glow', hexToRgba(color, 0.55));
     el.classList.add('pending');
     pmSelected.classList.add('has-pick');
-    pmSelected.textContent = `Selecionado: ${colLabel(c.col)}${rowLabel(c.row)} — toque novamente para confirmar`;
+    pmSelected.textContent = `Selecionado: ${colLabel(c.col)}${rowLabel(c.row)} — toque novamente ou no botão abaixo para confirmar`;
     pmConfirm.disabled = false;
   }
   function clearPendingPick() {
@@ -386,7 +398,7 @@
     setClueLine($('pm-clue-2'), state.clue2, ['markers2', 'reveal', 'end'].includes(state.phase));
     $('pm-hint').textContent = state.phase === 'markers1'
       ? 'Toque uma cor para selecionar, toque de novo para confirmar.'
-      : 'Toque uma cor para mover/adicionar marcador, toque de novo para confirmar.';
+      : 'Toque para adicionar o segundo marcador, toque de novo para confirmar.';
     renderMiniMarkers();
   }
   function renderMiniMarkers() {

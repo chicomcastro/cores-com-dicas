@@ -257,7 +257,7 @@
     if (!next) return;
 
     if (pendingSelect && pendingSelect.col === c.col && pendingSelect.row === c.row) {
-      const markerIndex = state.phase === 'markers1' ? 1 : (placingChoice || 2);
+      const markerIndex = state.phase === 'markers1' ? 1 : 2;
       socket.emit('place_marker', {
         playerName: next,
         col: c.col,
@@ -265,12 +265,14 @@
         markerIndex
       });
       clearPendingSelect();
-      placingChoice = null;
-      syncChoiceButtons();
       beep(720, 90, 'sine', 0.06);
       return;
     }
     highlightPendingSelect(c);
+    const round = state.phase === 'markers1' ? 1 : 2;
+    placingHintEl.textContent = round === 1
+      ? 'Toque novamente para confirmar.'
+      : 'Confirme a seleção do segundo marcador.';
     beep(440, 50, 'sine', 0.04);
   }
 
@@ -405,7 +407,7 @@
         break;
       case 'markers2':
         phaseTitle.textContent = 'Segunda marcação';
-        phaseDesc.textContent = 'Mova seu marcador ou adicione um segundo.';
+        phaseDesc.textContent = 'Cada jogador adiciona um segundo marcador.';
         showPlacingBanner(2);
         break;
       case 'reveal':
@@ -435,15 +437,16 @@
     placingBanner.classList.remove('hidden');
     placingNameEl.textContent = next;
     placingNameEl.style.color = player?.color || '#fff';
-    placingHintEl.textContent = round === 1
-      ? 'Toque na cor que acha ser a secreta.'
-      : 'Toque para mover ou adicionar marcador.';
-    if (round === 2) {
-      placingChoiceEl.classList.remove('hidden');
-      syncChoiceButtons();
+    if (pendingSelect) {
+      placingHintEl.textContent = round === 1
+        ? 'Toque novamente para confirmar.'
+        : 'Confirme a seleção do segundo marcador.';
     } else {
-      placingChoiceEl.classList.add('hidden');
+      placingHintEl.textContent = round === 1
+        ? 'Toque na cor que acha ser a secreta.'
+        : 'Toque para adicionar o segundo marcador.';
     }
+    placingChoiceEl.classList.add('hidden');
   }
 
   function renderScoreboard() {
@@ -574,35 +577,26 @@
     }
   });
 
-  /* change active player modal */
-  const changeActiveBtn = $('change-active-btn');
-  const changeActiveModal = $('change-active-modal');
-  const changeActiveList = $('change-active-list');
-  $('change-active-cancel').addEventListener('click', () => changeActiveModal.classList.add('hidden'));
-  changeActiveModal.addEventListener('click', (e) => {
-    if (e.target === changeActiveModal) changeActiveModal.classList.add('hidden');
+  /* reset round modal */
+  const resetRoundBtn = $('reset-round-btn');
+  const resetRoundModal = $('reset-round-modal');
+  $('reset-round-cancel').addEventListener('click', () => resetRoundModal.classList.add('hidden'));
+  resetRoundModal.addEventListener('click', (e) => {
+    if (e.target === resetRoundModal) resetRoundModal.classList.add('hidden');
   });
-  changeActiveBtn.addEventListener('click', () => {
+  resetRoundBtn.addEventListener('click', () => {
     if (!state || !state.players) return;
     if (state.phase === 'reveal' || state.phase === 'end') {
-      toast('Não é possível trocar agora.');
+      toast('Não é possível resetar agora.');
       return;
     }
-    changeActiveList.innerHTML = '';
-    state.players.forEach((p, i) => {
-      const li = document.createElement('li');
-      const btn = document.createElement('button');
-      btn.style.borderLeftColor = p.color;
-      btn.innerHTML = `<span>${escapeHtml(p.name)}</span>${i === state.activeIdx ? '<span class="badge-active">vez atual</span>' : ''}`;
-      btn.disabled = i === state.activeIdx;
-      btn.addEventListener('click', () => {
-        socket.emit('change_active_player', { playerName: p.name });
-        changeActiveModal.classList.add('hidden');
-      });
-      li.appendChild(btn);
-      changeActiveList.appendChild(li);
-    });
-    changeActiveModal.classList.remove('hidden');
+    resetRoundModal.classList.remove('hidden');
+  });
+  $('reset-round-confirm').addEventListener('click', () => {
+    if (!state || !state.players) return;
+    const active = state.players[state.activeIdx];
+    if (active) socket.emit('change_active_player', { playerName: active.name });
+    resetRoundModal.classList.add('hidden');
   });
 
   /* ---------- SOCKET ---------- */
