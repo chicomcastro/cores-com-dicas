@@ -128,12 +128,24 @@
             <span id="secret-partial" class="active-info-points">+0</span>
           </div>
         </div>
+
+        <div id="secret-partial-wrap" class="partial-wrap hidden">
+          <div class="partial-header">
+            <span class="partial-title">Parcial após a 1ª dica</span>
+            <span class="partial-points" id="secret-partial-pts">+0 pts</span>
+          </div>
+          <div class="partial-board-wrap" data-board="secret">
+            <div class="partial-board-pan">
+              <div class="partial-board"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
     <!-- WAITING TURN (other player active OR active waiting markers) -->
     <section id="wait-turn" class="screen">
-      <div class="center-card">
+      <div class="wait-turn-inner">
         <div class="badge" id="wt-badge">Aguarde sua vez</div>
         <h2>Vez de <span id="wt-active">—</span></h2>
         <div id="wt-clue-block">
@@ -150,6 +162,17 @@
           <div class="active-info-row">
             <span class="active-info-label">Pontos parciais</span>
             <span id="wt-partial" class="active-info-points">+0</span>
+          </div>
+        </div>
+
+        <div id="wt-partial-wrap" class="partial-wrap hidden">
+          <div class="partial-header">
+            <span class="partial-title">Parcial após a 1ª dica</span>
+          </div>
+          <div class="partial-board-wrap" data-board="wt">
+            <div class="partial-board-pan">
+              <div class="partial-board"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -204,14 +227,20 @@
       </div>
       <div class="reveal-footer">
         <button id="next-round-btn" class="primary big">Próxima Rodada</button>
+        <p id="reveal-wait-msg" class="hint hidden"></p>
       </div>
     </section>
 
     <!-- GAME OVER -->
     <section id="end" class="screen">
-      <div class="center-card">
-        <h2 id="end-title">Fim de Jogo</h2>
-        <div class="score-big" id="end-score">0</div>
+      <canvas id="player-confetti"></canvas>
+      <div class="end-content">
+        <h2 id="end-title">Fim de Jogo!</h2>
+        <div id="end-winner-banner" class="end-winner-banner hidden">
+          <div class="trophy">🏆</div>
+          <div class="winner-name" id="end-winner-name">—</div>
+        </div>
+        <ol id="end-list" class="end-list"></ol>
         <p class="hint" id="end-rank"></p>
         <button id="end-play-again-btn" class="primary big">Jogar Novamente</button>
       </div>
@@ -222,6 +251,11 @@
 
     <!-- MINI RANKING (sticky bottom, visible during the game) -->
     <div id="mini-rank" class="mini-rank hidden">
+      <div id="mini-round-chip" class="mini-round-chip">
+        <span class="rc-label">R</span><span id="mini-round-cur">1</span>/<span id="mini-round-tot">2</span>
+        <span class="rc-sep">·</span>
+        <span class="rc-label">T</span><span id="mini-turn-cur">1</span>/<span id="mini-turn-tot">6</span>
+      </div>
       <div class="mini-rank-row" id="mini-rank-row"></div>
     </div>
   </main>
