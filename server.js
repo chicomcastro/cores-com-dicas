@@ -452,6 +452,7 @@ function doReveal(room, code) {
   const secret = room.cellById.get(state.secretCellId);
   if (!secret) return;
   const sc = secret.col, sr = secret.row;
+  const cols = state.gridCols;
   const giverName = state.players[state.activeIdx]?.name;
   const roundScores = {};
   let giverPoints = 0;
@@ -462,7 +463,8 @@ function doReveal(room, code) {
     for (const idx of [1, 2]) {
       const m = mks[idx];
       if (!m) continue;
-      const d = Math.max(Math.abs(m.col - sc), Math.abs(m.row - sr));
+      const dCol = Math.min(Math.abs(m.col - sc), cols - Math.abs(m.col - sc));
+      const d = Math.max(dCol, Math.abs(m.row - sr));
       if (d === 0) pts += 3;
       else if (d <= 1) pts += 2;
       else if (d <= 2) pts += 1;
@@ -678,6 +680,9 @@ io.on('connection', (socket) => {
     const code = socketRoom(socket);
     const room = code && getRoom(code);
     if (!room) return;
+    if (room.state.phase !== 'reveal') return;
+    const active = room.state.players[room.state.activeIdx];
+    if (!active || active.socketId !== socket.id) return;
     nextTurn(room, code);
   });
 
