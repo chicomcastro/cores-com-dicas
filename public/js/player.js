@@ -53,6 +53,10 @@
     $('mini-rank').classList.toggle('hidden', !showRank);
     const showExit = !['loading', 'home', 'create-room', 'join-room', 'login'].includes(name);
     $('exit-room-btn').classList.toggle('hidden', !showExit);
+    if (name !== 'end') {
+      endRendered = false;
+      stopPlayerConfetti();
+    }
   }
 
   function vibrate(ms) {
@@ -355,6 +359,15 @@
     info.classList.remove('hidden');
     $('secret-coords').textContent = coordOf(mySecret);
     $('secret-partial').textContent = '+' + partial;
+
+    const partialWrap = $('secret-partial-wrap');
+    if (state.phase === 'clue2') {
+      partialWrap.classList.remove('hidden');
+      renderPartialBoard('secret', { showSecret: true });
+      $('secret-partial-pts').textContent = '+' + partial + ' pts';
+    } else {
+      partialWrap.classList.add('hidden');
+    }
   }
 
   clueSend.addEventListener('click', sendClue);
@@ -412,6 +425,15 @@
       activeInfo.classList.add('hidden');
       badge.textContent = 'Aguarde sua vez';
     }
+
+    // partial board: shown to non-active waiters during clue2
+    const wtPartial = $('wt-partial-wrap');
+    if (state.phase === 'clue2' && !isActive) {
+      wtPartial.classList.remove('hidden');
+      renderPartialBoard('wt', { showSecret: false });
+    } else {
+      wtPartial.classList.add('hidden');
+    }
   }
 
   function setClueLine(el, value, afterFlag) {
@@ -428,8 +450,8 @@
   }
 
   function computeActivePartialScore() {
-    if (!mySecret) return 0;
-    const sc = mySecret.col, sr = mySecret.row;
+    if (!mySecret || !state) return 0;
+    const cols = state.boardCols;
     let pts = 0;
     const markers = state.markers || {};
     Object.entries(markers).forEach(([name, mks]) => {
@@ -437,11 +459,150 @@
       [1, 2].forEach(idx => {
         const m = mks[idx];
         if (!m) return;
-        const d = Math.max(Math.abs(m.col - sc), Math.abs(m.row - sr));
+        const d = G.chebyshevWrap(m, mySecret, cols);
         if (d <= 1) pts += 1;
       });
     });
     return Math.min(9, pts);
+  }
+
+  /* ---------- PARTIAL BOARD (clue2 phase: shown to everyone with markers1 results) ---------- */
+  const partialBoards = new Map();
+
+  function getPartialBoard(scope) {
+    if (partialBoards.has(scope)) return partialBoards.get(scope);
+    const wrap = document.querySelector(`.partial-board-wrap[data-board="${scope}"]`);
+    if (!wrap) return null;
+    const pan = wrap.querySelector('.partial-board-pan');
+    const board = wrap.querySelector('.partial-board');
+    const obj = { wrap, pan, board, cellEls: [], cols: 0, rows: 0, zoom: 1, panX: 0, panY: 0 };
+    attachPartialPanZoom(obj);
+    partialBoards.set(scope, obj);
+    return obj;
+  }
+
+  function buildPartialBoard(scope) {
+    if (!state || !G) return null;
+    const pb = getPartialBoard(scope);
+    if (!pb) return null;
+    const cols = state.boardCols, rows = state.boardRows;
+    if (pb.cols === cols && pb.rows === rows && pb.cellEls.length) return pb;
+    pb.cols = cols; pb.rows = rows;
+    const cells = G.generateBoard(cols, rows);
+    pb.board.innerHTML = '';
+    pb.board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    pb.board.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+    pb.cellEls = cells.map(c => {
+      const div = document.createElement('div');
+      div.className = 'partial-cell';
+      div.style.background = G.cellHsl(c);
+      pb.board.appendChild(div);
+      return div;
+    });
+    return pb;
+  }
+
+  function renderPartialBoard(scope, options) {
+    const pb = buildPartialBoard(scope);
+    if (!pb) return;
+    pb.cellEls.forEach(el => {
+      el.classList.remove('secret-here');
+      el.querySelectorAll('.marker, .dist-badge').forEach(n => n.remove());
+    });
+    const showSecret = !!options.showSecret && mySecret;
+    if (showSecret) {
+      const idx = mySecret.row * pb.cols + mySecret.col;
+      const el = pb.cellEls[idx];
+      if (el) el.classList.add('secret-here');
+    }
+    Object.entries(state.markers || {}).forEach(([name, mks]) => {
+      const player = state.players.find(p => p.name === name);
+      if (!player) return;
+      [1, 2].forEach(idx => {
+        const m = mks[idx];
+        if (!m) return;
+        const el = pb.cellEls[m.row * pb.cols + m.col];
+        if (!el) return;
+        const dot = document.createElement('div');
+        dot.className = 'marker' + (idx === 2 ? ' m2' : '');
+        dot.style.background = player.color;
+        dot.textContent = name.charAt(0).toUpperCase();
+        el.appendChild(dot);
+        if (showSecret && mySecret) {
+          const d = G.chebyshevWrap({ col: m.col, row: m.row }, { col: mySecret.col, row: mySecret.row }, pb.cols);
+          const badge = document.createElement('div');
+          const cls = d === 0 ? 'd0' : d === 1 ? 'd1' : d === 2 ? 'd2' : 'd3';
+          badge.className = `dist-badge ${cls}`;
+          badge.textContent = d;
+          el.appendChild(badge);
+        }
+      });
+    });
+  }
+
+  function attachPartialPanZoom(pb) {
+    const pointers = new Map();
+    let pinchStart = null, panStart = null;
+    function apply() { pb.pan.style.transform = `translate(${pb.panX}px, ${pb.panY}px) scale(${pb.zoom})`; }
+    function clamp() {
+      const r = pb.wrap.getBoundingClientRect();
+      const ext = (pb.zoom - 1) / 2;
+      pb.panX = Math.max(-r.width * ext, Math.min(r.width * ext, pb.panX));
+      pb.panY = Math.max(-r.height * ext, Math.min(r.height * ext, pb.panY));
+    }
+    function setZ(z, cx, cy) {
+      const newZ = Math.max(1, Math.min(5, z));
+      if (cx == null) { pb.zoom = newZ; clamp(); apply(); return; }
+      const r = pb.wrap.getBoundingClientRect();
+      const mx = cx - r.left, my = cy - r.top;
+      const ratio = newZ / pb.zoom;
+      pb.panX = mx - (mx - pb.panX) * ratio;
+      pb.panY = my - (my - pb.panY) * ratio;
+      pb.zoom = newZ;
+      clamp(); apply();
+    }
+    pb.wrap.addEventListener('pointerdown', (e) => {
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        pinchStart = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom: pb.zoom };
+      } else if (pointers.size === 1 && pb.zoom > 1) {
+        panStart = { x: e.clientX, y: e.clientY, panX: pb.panX, panY: pb.panY };
+      }
+    });
+    pb.wrap.addEventListener('pointermove', (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 2 && pinchStart) {
+        const [a, b] = [...pointers.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        setZ(pinchStart.zoom * (d / pinchStart.dist), (a.x + b.x) / 2, (a.y + b.y) / 2);
+      } else if (pointers.size === 1 && panStart) {
+        pb.panX = panStart.panX + (e.clientX - panStart.x);
+        pb.panY = panStart.panY + (e.clientY - panStart.y);
+        clamp(); apply();
+      }
+    });
+    function endPtr(e) {
+      pointers.delete(e.pointerId);
+      if (pointers.size < 2) pinchStart = null;
+      if (pointers.size === 0) panStart = null;
+    }
+    pb.wrap.addEventListener('pointerup', endPtr);
+    pb.wrap.addEventListener('pointercancel', endPtr);
+    pb.wrap.addEventListener('pointerleave', endPtr);
+    pb.wrap.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      setZ(pb.zoom + (-Math.sign(e.deltaY) * 0.2), e.clientX, e.clientY);
+    }, { passive: false });
+    let lastTap = 0;
+    pb.wrap.addEventListener('pointerdown', () => {
+      const now = Date.now();
+      if (now - lastTap < 300) {
+        pb.zoom = 1; pb.panX = 0; pb.panY = 0; apply();
+      }
+      lastTap = now;
+    });
   }
 
   /* ---------- PLACE MARKER (mini board on phone) ---------- */
@@ -685,8 +846,20 @@
     $('score-big').textContent = (delta >= 0 ? '+' : '') + delta;
     $('total-score').textContent = me ? me.score : 0;
     const isLast = state.turnsTaken + 1 >= state.totalTurns;
-    nextRoundBtn.textContent = isLast ? 'Ver Placar Final' : 'Próxima Rodada';
-    nextRoundBtn.disabled = false;
+    const isActive = state.activeName === myName;
+    const waitMsg = $('reveal-wait-msg');
+    if (isActive) {
+      nextRoundBtn.classList.remove('hidden');
+      nextRoundBtn.textContent = isLast ? 'Ver Placar Final' : 'Próxima Rodada';
+      nextRoundBtn.disabled = false;
+      waitMsg.classList.add('hidden');
+    } else {
+      nextRoundBtn.classList.add('hidden');
+      waitMsg.classList.remove('hidden');
+      waitMsg.textContent = isLast
+        ? `Aguardando ${state.activeName} ver o placar final…`
+        : `Aguardando ${state.activeName} passar a vez…`;
+    }
     renderRevealBoard();
   }
 
@@ -722,8 +895,7 @@
       div.className = 'reveal-cell';
       div.style.background = G.cellHsl(c);
       if (rc) {
-        const dc = Math.abs(c.col - rc.col), dr = Math.abs(c.row - rc.row);
-        const d = Math.max(dc, dr);
+        const d = G.chebyshevWrap(c, rc, cols);
         if (d === 0) {
           div.classList.add('secret-cell');
         } else if (d <= 1) {
@@ -755,11 +927,93 @@
     socket.emit('reset_game');
   });
 
+  let endRendered = false;
+  let confettiAnim = null;
+
   function renderEnd() {
-    const me = state.players.find(p => p.name === myName);
-    $('end-score').textContent = me ? me.score : 0;
-    const idx = (state.finalScores || []).findIndex(p => p.name === myName);
-    $('end-rank').textContent = idx >= 0 ? `Sua colocação: #${idx + 1}` : '';
+    if (endRendered) return;
+    endRendered = true;
+    const finals = state.finalScores || state.players.map(p => ({ name: p.name, color: p.color, score: p.score }));
+    const sorted = [...finals].sort((a, b) => b.score - a.score);
+    const list = $('end-list');
+    list.innerHTML = '';
+    const myIdx = sorted.findIndex(p => p.name === myName);
+
+    const winner = sorted[0];
+    const banner = $('end-winner-banner');
+    if (winner) {
+      $('end-winner-name').textContent = winner.name === myName ? 'Você venceu!' : `${winner.name} venceu!`;
+      banner.classList.remove('hidden');
+    } else {
+      banner.classList.add('hidden');
+    }
+
+    sorted.forEach((p, i) => {
+      const li = document.createElement('li');
+      li.style.borderLeftColor = p.color;
+      li.style.animationDelay = (0.4 + i * 0.18) + 's';
+      if (p.name === myName) li.classList.add('me');
+      if (i === 0) li.classList.add('first');
+      const posCls = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+      li.innerHTML = `
+        <span class="rank-pos ${posCls}">#${i + 1}</span>
+        <span class="rank-name">${escapeHtml(p.name)}${p.name === myName ? '<span class="you-tag">você</span>' : ''}</span>
+        <span class="rank-score">${p.score}</span>
+      `;
+      list.appendChild(li);
+    });
+
+    $('end-rank').textContent = myIdx >= 0
+      ? (myIdx === 0 ? '🎉 Você é o(a) campeão(ã)!' : `Sua colocação: #${myIdx + 1}`)
+      : '';
+
+    startPlayerConfetti(winner && winner.name === myName);
+  }
+
+  function startPlayerConfetti(extra) {
+    const cnv = $('player-confetti');
+    if (!cnv) return;
+    const ctx = cnv.getContext('2d');
+    function resize() { cnv.width = cnv.clientWidth; cnv.height = cnv.clientHeight; }
+    resize();
+    window.addEventListener('resize', resize);
+    const colors = ['#ff5e5e', '#ffb84a', '#62d36b', '#5cb8ff', '#b478ff', '#ffd54a', '#f2a6b5', '#a8d8a8'];
+    const count = extra ? 160 : 90;
+    const parts = [];
+    for (let i = 0; i < count; i++) {
+      parts.push({
+        x: Math.random() * cnv.width,
+        y: -Math.random() * cnv.height,
+        vy: 2 + Math.random() * 3.5,
+        vx: (Math.random() - 0.5) * 2,
+        size: 5 + Math.random() * 6,
+        color: colors[(Math.random() * colors.length) | 0],
+        rot: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 0.2
+      });
+    }
+    function tick() {
+      ctx.clearRect(0, 0, cnv.width, cnv.height);
+      parts.forEach(p => {
+        p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+        if (p.y > cnv.height) { p.y = -10; p.x = Math.random() * cnv.width; }
+        ctx.save();
+        ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.5);
+        ctx.restore();
+      });
+      confettiAnim = requestAnimationFrame(tick);
+    }
+    tick();
+  }
+  function stopPlayerConfetti() {
+    if (confettiAnim) cancelAnimationFrame(confettiAnim);
+    confettiAnim = null;
+    const cnv = $('player-confetti');
+    if (!cnv) return;
+    const ctx = cnv.getContext('2d');
+    ctx.clearRect(0, 0, cnv.width, cnv.height);
   }
 
   /* ---------- MINI RANK ---------- */
@@ -781,6 +1035,10 @@
       `;
       row.appendChild(el);
     });
+    $('mini-round-cur').textContent = state.currentRound;
+    $('mini-round-tot').textContent = state.rounds;
+    $('mini-turn-cur').textContent = Math.min(state.turnsTaken + 1, state.totalTurns);
+    $('mini-turn-tot').textContent = state.totalTurns;
   }
 
   /* ---------- ROUTER ---------- */

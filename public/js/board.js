@@ -425,7 +425,8 @@
       if (el) el.classList.add('secret-reveal');
       for (let dr = -2; dr <= 2; dr++) {
         for (let dc = -2; dc <= 2; dc++) {
-          const c = state.revealCell.col + dc, r = state.revealCell.row + dr;
+          const c = ((state.revealCell.col + dc) % currentCols + currentCols) % currentCols;
+          const r = state.revealCell.row + dr;
           const e = cellEl(c, r);
           if (!e) continue;
           const d = Math.max(Math.abs(dc), Math.abs(dr));

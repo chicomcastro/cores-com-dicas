@@ -38,7 +38,16 @@
     return Math.max(Math.abs(a.col - b.col), Math.abs(a.row - b.row));
   }
 
-  const api = { COLS, ROWS, generateBoard, cellHsl, chebyshev };
+  function colDistance(c1, c2, cols) {
+    const d = Math.abs(c1 - c2);
+    return Math.min(d, cols - d);
+  }
+
+  function chebyshevWrap(a, b, cols) {
+    return Math.max(colDistance(a.col, b.col, cols), Math.abs(a.row - b.row));
+  }
+
+  const api = { COLS, ROWS, generateBoard, cellHsl, chebyshev, colDistance, chebyshevWrap };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
