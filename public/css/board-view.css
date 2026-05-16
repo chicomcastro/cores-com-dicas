@@ -1,0 +1,157 @@
+/* ============ BoardView component ============ */
+.bv-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.bv-viewport {
+  position: absolute; inset: 0;
+  overflow: hidden;
+  background: #16121e;
+  border-radius: 14px;
+  border: 1px solid #2e2640;
+}
+.bv-pan {
+  position: absolute; inset: 0;
+  transform-origin: center center;
+  will-change: transform;
+}
+.bv-layout {
+  position: absolute; inset: 0;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  grid-template-rows: 18px 1fr;
+  gap: 2px;
+  padding: 4px;
+  box-sizing: border-box;
+}
+.bv-root.bv-no-labels .bv-layout {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+.bv-root.bv-no-labels .bv-corner,
+.bv-root.bv-no-labels .bv-col-labels,
+.bv-root.bv-no-labels .bv-row-labels { display: none; }
+.bv-root.bv-no-labels .bv-grid { grid-column: 1; grid-row: 1; }
+
+.bv-corner { grid-column: 1; grid-row: 1; }
+.bv-col-labels {
+  grid-column: 2; grid-row: 1;
+  display: grid; gap: 1px;
+  font-size: 9px; font-weight: 800; color: #9a8da0;
+}
+.bv-row-labels {
+  grid-column: 1; grid-row: 2;
+  display: grid; gap: 1px;
+  font-size: 9px; font-weight: 800; color: #9a8da0;
+}
+.bv-col-labels span,
+.bv-row-labels span {
+  display: flex; align-items: center; justify-content: center;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+.bv-grid {
+  grid-column: 2; grid-row: 2;
+  display: grid; gap: 1px;
+  background: #221c2c;
+  padding: 2px;
+  border-radius: 8px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.bv-cell {
+  position: relative;
+  border-radius: 2px;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+/* secret highlight (whole cell pulsing white outline) */
+.bv-cell.bv-secret {
+  z-index: 4;
+  outline: 2px solid #fff;
+  outline-offset: -1px;
+  animation: bvSecretBlink 1.4s ease-in-out infinite;
+}
+@keyframes bvSecretBlink {
+  0%, 100% { box-shadow: 0 0 8px 2px rgba(255,255,255,0.4); }
+  50% { box-shadow: 0 0 18px 5px rgba(255,255,255,0.75); }
+}
+
+/* obscured: hide the actual color of the secret cell with a veil */
+.bv-cell.bv-obscured {
+  background-color: #3a2e48 !important;
+  background-image: linear-gradient(135deg, #3a2e48 0%, #2a2236 50%, #3a2e48 100%) !important;
+}
+.bv-cell.bv-obscured::after {
+  content: '?';
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: clamp(8px, 1.6vw, 14px); font-weight: 900; color: #c4a7e7;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+
+/* score zones (reveal phase) */
+.bv-cell.bv-score-3x3 { outline: 2px dashed rgba(255,255,255,0.65); outline-offset: -2px; }
+.bv-cell.bv-score-5x5 { outline: 1px dashed rgba(255,255,255,0.35); outline-offset: -1px; }
+
+/* pending pick (mark mode preview) */
+.bv-cell.bv-pending {
+  z-index: 5;
+  outline: 3px solid var(--bv-self-color, #fff);
+  outline-offset: -1px;
+  transform: scale(1.4);
+  box-shadow: 0 0 14px 6px var(--bv-self-glow, rgba(255,255,255,0.5));
+  border-radius: 6px;
+  animation: bvPendingPulse 1s ease-in-out infinite;
+}
+@keyframes bvPendingPulse {
+  0%, 100% { box-shadow: 0 0 10px 4px var(--bv-self-glow, rgba(255,255,255,0.45)), 0 4px 12px rgba(0,0,0,0.5); }
+  50% { box-shadow: 0 0 20px 9px var(--bv-self-glow, rgba(255,255,255,0.6)), 0 4px 12px rgba(0,0,0,0.5); }
+}
+.bv-cell.bv-pending::after {
+  content: '✓';
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: clamp(8px, 1.6vw, 14px); font-weight: 900; color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+  pointer-events: none;
+}
+
+/* markers */
+.bv-marker {
+  position: absolute; inset: 8%;
+  border-radius: 50%;
+  border: 1.5px solid #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px; font-weight: 800; color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  pointer-events: none;
+  z-index: 5;
+}
+.bv-marker.bv-m2 { inset: 30% 8% 8% 30%; border-style: dashed; }
+
+/* distance badges */
+.bv-dist-badge {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 14px; height: 14px;
+  border-radius: 999px;
+  font-size: 9px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 3px;
+  z-index: 6;
+  border: 1px solid rgba(0,0,0,0.4);
+  color: #1a1520;
+}
+.bv-dist-badge.d0 { background: #f7c97e; }
+.bv-dist-badge.d1 { background: #a8d8a8; }
+.bv-dist-badge.d2 { background: #8ec5e8; }
+.bv-dist-badge.d3 { background: #c8a0a0; }

@@ -8,15 +8,10 @@
   let myRoom = sessionStorage.getItem('ccd:room') || null;
   let mySecret = null;
   let pendingPick = null;
+  let joinAttempted = false;
+  let board = null; // BoardView instance, created lazily once we enter the game
 
-  // mini-board state
-  let miniCells = [];
-  let miniCellEls = [];
-  let miniCols = 0, miniRows = 0;
-  let zoom = 1;
-  let panX = 0, panY = 0;
-
-  // check URL for room code (use once, then clean URL)
+  /* read room from URL once */
   const urlParams = new URLSearchParams(window.location.search);
   const urlRoom = (urlParams.get('room') || '').toUpperCase().trim();
   if (urlRoom) {
@@ -30,29 +25,42 @@
   }
 
   function colLabel(i) {
-    let s = '';
-    let n = i;
-    while (true) {
-      s = String.fromCharCode(65 + (n % 26)) + s;
-      n = Math.floor(n / 26) - 1;
-      if (n < 0) break;
-    }
+    let s = '', n = i;
+    while (true) { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; if (n < 0) break; }
     return s;
   }
   function rowLabel(i) { return String(i + 1); }
   function coordOf(c) { return `${colLabel(c.col)}${rowLabel(c.row)}`; }
 
+  /* ---------- SCREEN ROUTER ---------- */
+  const PRE_GAME = ['loading', 'home', 'create-room', 'join-room', 'login', 'waiting'];
+  const GAME_SCREENS = ['secret', 'wait-turn', 'place-marker', 'reveal'];
+
   function showScreen(name) {
-    ['loading', 'home', 'create-room', 'join-room', 'login', 'waiting', 'secret', 'wait-turn', 'place-marker', 'reveal', 'end'].forEach(s => {
-      const el = document.getElementById(s);
-      if (!el) return;
-      if (s === name) el.classList.add('active'); else el.classList.remove('active');
-    });
-    const showRank = !['loading', 'home', 'create-room', 'join-room', 'login', 'waiting', 'end'].includes(name);
+    PRE_GAME.forEach(s => { const e = document.getElementById(s); if (e) e.classList.remove('active'); });
+    GAME_SCREENS.forEach(s => { const e = document.getElementById(s); if (e) e.classList.remove('active'); });
+    const endEl = document.getElementById('end');
+    if (endEl) endEl.classList.remove('active');
+    const layout = $('game-layout');
+    layout.classList.add('hidden');
+
+    if (PRE_GAME.includes(name)) {
+      const el = document.getElementById(name);
+      if (el) el.classList.add('active');
+    } else if (GAME_SCREENS.includes(name)) {
+      layout.classList.remove('hidden');
+      const el = document.getElementById(name);
+      if (el) el.classList.add('active');
+    } else if (name === 'end') {
+      endEl.classList.add('active');
+    }
+
+    const showRank = GAME_SCREENS.includes(name);
     document.body.classList.toggle('has-rank', showRank);
     $('mini-rank').classList.toggle('hidden', !showRank);
     const showExit = !['loading', 'home', 'create-room', 'join-room', 'login'].includes(name);
     $('exit-room-btn').classList.toggle('hidden', !showExit);
+
     if (name !== 'end') {
       endRendered = false;
       stopPlayerConfetti();
@@ -60,9 +68,7 @@
   }
 
   function vibrate(ms) {
-    if (navigator.vibrate) {
-      try { navigator.vibrate(ms); } catch (e) {}
-    }
+    if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) {} }
   }
 
   /* ---------- AUDIO ---------- */
@@ -100,15 +106,9 @@
     });
   }
   function notifyMyTurn(kind) {
-    if (kind === 'clue') {
-      chime([{ f: 660, d: 120 }, { f: 880, d: 180 }]);
-      vibrate([80, 40, 120]);
-    } else if (kind === 'mark') {
-      chime([{ f: 520, d: 100 }, { f: 720, d: 120 }, { f: 980, d: 180 }]);
-      vibrate([60, 30, 60, 30, 100]);
-    }
+    if (kind === 'clue') { chime([{ f: 660, d: 120 }, { f: 880, d: 180 }]); vibrate([80, 40, 120]); }
+    else if (kind === 'mark') { chime([{ f: 520, d: 100 }, { f: 720, d: 120 }, { f: 980, d: 180 }]); vibrate([60, 30, 60, 30, 100]); }
   }
-
   ['touchstart', 'click', 'keydown'].forEach(ev => {
     document.addEventListener(ev, function unlock() {
       ensureAudio();
@@ -151,7 +151,7 @@
     showScreen('join-room');
   });
 
-  /* ---------- CREATE ROOM ---------- */
+  /* ---------- CREATE / JOIN ROOM ---------- */
   $('create-room-btn').addEventListener('click', () => {
     const password = $('create-password').value.trim() || null;
     $('create-room-btn').disabled = true;
@@ -164,15 +164,12 @@
         sessionStorage.setItem('ccd:room', myRoom);
         if (password) sessionStorage.setItem('ccd:room-pw', password);
         joinAttempted = false;
-        if (myName) {
-          socket.emit('join', { playerName: myName, room: myRoom });
-        }
+        if (myName) socket.emit('join', { playerName: myName, room: myRoom });
       }
     });
   });
   $('create-back-btn').addEventListener('click', () => showScreen('home'));
 
-  /* ---------- JOIN ROOM ---------- */
   const roomCodeInput = $('room-code-input');
   const roomJoinBtn = $('room-join-btn');
   const roomStatus = $('room-status');
@@ -216,10 +213,8 @@
     }
   }
 
-  /* ---------- WAITING ---------- */
-  const editNameBtn = $('edit-name-btn');
-
-  editNameBtn.addEventListener('click', () => {
+  /* ---------- WAITING (lobby) ---------- */
+  $('edit-name-btn').addEventListener('click', () => {
     joinNameInput.value = myName || '';
     myName = null;
     loginStatus.textContent = '';
@@ -227,12 +222,10 @@
     showScreen('login');
   });
 
-  /* ---------- LOBBY ACTIONS ---------- */
   function copyToClipboard(text, btn) {
     const done = () => { btn.textContent = '✓'; setTimeout(() => { btn.textContent = '📋'; }, 1500); };
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).then(done).catch(() => fallback());
-    } else { fallback(); }
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(fallback);
+    else fallback();
     function fallback() {
       const ta = document.createElement('textarea');
       ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
@@ -241,10 +234,7 @@
       ta.remove();
     }
   }
-
-  $('lobby-copy-code').addEventListener('click', () => {
-    copyToClipboard(myRoom || '', $('lobby-copy-code'));
-  });
+  $('lobby-copy-code').addEventListener('click', () => copyToClipboard(myRoom || '', $('lobby-copy-code')));
 
   $('lobby-start-btn').addEventListener('click', () => {
     const preset = GRID_PRESETS[selectedPreset];
@@ -258,26 +248,22 @@
   function leaveRoom() {
     myRoom = null;
     state = null;
+    mySecret = null;
+    pendingPick = null;
+    if (board) { board = null; $('game-board-host').innerHTML = ''; }
     sessionStorage.removeItem('ccd:room');
     sessionStorage.removeItem('ccd:room-pw');
     updateGreeting();
     showScreen('home');
   }
-
   $('lobby-leave-btn').addEventListener('click', leaveRoom);
+  $('exit-room-btn').addEventListener('click', () => { if (confirm('Sair da sala?')) leaveRoom(); });
 
-  $('exit-room-btn').addEventListener('click', () => {
-    if (confirm('Sair da sala?')) leaveRoom();
-  });
-
-  socket.on('start_rejected', (d) => {
-    $('lobby-help').textContent = d?.reason || 'Não foi possível iniciar.';
-  });
+  socket.on('start_rejected', (d) => { $('lobby-help').textContent = d?.reason || 'Não foi possível iniciar.'; });
 
   function renderWaiting() {
     $('waiting-name').textContent = myName || '';
     $('lobby-room-code').textContent = myRoom || '—';
-
     const listEl = $('lobby-player-list');
     listEl.innerHTML = '';
     const conn = state?.lobbyConnected || {};
@@ -288,7 +274,6 @@
       div.innerHTML = `<span class="player-name">${escapeHtml(name)}</span><span class="conn-dot ${isConnected ? 'on' : ''}"></span>`;
       listEl.appendChild(div);
     });
-
     const names = state?.lobbyPlayers || [];
     const enough = names.length >= 2 && names.length <= 10;
     $('lobby-start-btn').disabled = !enough;
@@ -297,76 +282,173 @@
     else help.textContent = 'Pronto para iniciar!';
   }
 
+  /* ---------- BOARD VIEW (one instance, persistent across game screens) ---------- */
+  function ensureBoard() {
+    if (board) return board;
+    if (!state) return null;
+    const host = $('game-board-host');
+    host.innerHTML = '';
+    board = window.createBoardView(host, {
+      cols: state.boardCols,
+      rows: state.boardRows,
+      players: state.players,
+      mode: 'view',
+      zoomable: true,
+      showLabels: true,
+    });
+    board.on('cellTap', onBoardCellTap);
+    return board;
+  }
+
+  function applyBoardForState() {
+    if (!state) return;
+    const b = ensureBoard();
+    if (!b) return;
+
+    const isActive = state.activeName === myName;
+    const phase = state.phase;
+    const inMarkers = phase === 'markers1' || phase === 'markers2';
+    const myPending = (state.pendingMarkers || []).includes(myName);
+
+    let secretCell = null;
+    let secretObscured = false;
+    let scoreZones = false;
+    let showDistanceBadges = false;
+    let mode = 'view';
+
+    if (isActive && mySecret) {
+      secretCell = { col: mySecret.col, row: mySecret.row };
+      if (phase === 'clue1' || phase === 'clue2' || inMarkers) {
+        secretObscured = true;
+      }
+      // distance badges: when there are placed markers and giver might want to calibrate
+      if (phase === 'clue2' || inMarkers) {
+        showDistanceBadges = true;
+      }
+    }
+
+    if (phase === 'reveal' && state.revealCell) {
+      secretCell = { col: state.revealCell.col, row: state.revealCell.row };
+      secretObscured = false;
+      scoreZones = true;
+    }
+
+    if (inMarkers && myPending) {
+      mode = 'mark';
+    }
+
+    const me = state.players.find(p => p.name === myName);
+    const selfColor = me?.color || '#ffffff';
+
+    b.update({
+      cols: state.boardCols,
+      rows: state.boardRows,
+      players: state.players,
+      markers: state.markers || {},
+      secretCell,
+      secretObscured,
+      scoreZones,
+      showDistanceBadges,
+      pendingPick,
+      selfColor,
+      mode,
+    });
+  }
+
+  function onBoardCellTap(col, row) {
+    if (!state) return;
+    if (state.phase !== 'markers1' && state.phase !== 'markers2') return;
+    if (!(state.pendingMarkers || []).includes(myName)) return;
+
+    if (pendingPick && pendingPick.col === col && pendingPick.row === row) {
+      const markerIndex = state.phase === 'markers1' ? 1 : 2;
+      socket.emit('place_marker', { playerName: myName, col, row, markerIndex });
+      vibrate(40);
+      beep(720, 90, 'sine', 0.06);
+      pendingPick = null;
+      updatePendingUI();
+      applyBoardForState();
+      return;
+    }
+
+    pendingPick = { col, row };
+    updatePendingUI();
+    applyBoardForState();
+    beep(440, 50, 'sine', 0.04);
+    vibrate(15);
+  }
+
+  function updatePendingUI() {
+    const pm = $('pm-selected');
+    if (pendingPick) {
+      pm.classList.add('has-pick');
+      pm.textContent = `Selecionado: ${coordOf(pendingPick)} — toque novamente para confirmar`;
+      $('pm-confirm').disabled = false;
+    } else {
+      pm.classList.remove('has-pick');
+      pm.textContent = 'Selecione uma cor…';
+      $('pm-confirm').disabled = true;
+    }
+  }
+
+  $('pm-confirm').addEventListener('click', () => {
+    if (!pendingPick || !state) return;
+    if (state.phase !== 'markers1' && state.phase !== 'markers2') return;
+    if (!(state.pendingMarkers || []).includes(myName)) return;
+    const markerIndex = state.phase === 'markers1' ? 1 : 2;
+    socket.emit('place_marker', { playerName: myName, col: pendingPick.col, row: pendingPick.row, markerIndex });
+    vibrate(40);
+    beep(720, 90, 'sine', 0.06);
+    pendingPick = null;
+    updatePendingUI();
+    applyBoardForState();
+  });
+
+  /* ---------- VIEW-COLOR OVERLAY (press-and-hold) ---------- */
+  const viewColorBtn = $('view-color-btn');
+  const colorRevealOverlay = $('color-reveal-overlay');
+  const colorRevealId = $('color-reveal-id');
+
+  function startColorReveal(e) {
+    if (!mySecret) return;
+    colorRevealOverlay.style.background = mySecret.hsl;
+    colorRevealId.textContent = coordOf(mySecret);
+    colorRevealOverlay.classList.remove('hidden');
+    if (e && e.cancelable) e.preventDefault();
+  }
+  function endColorReveal() {
+    colorRevealOverlay.classList.add('hidden');
+  }
+  viewColorBtn.addEventListener('pointerdown', startColorReveal);
+  viewColorBtn.addEventListener('pointerup', endColorReveal);
+  viewColorBtn.addEventListener('pointercancel', endColorReveal);
+  viewColorBtn.addEventListener('pointerleave', endColorReveal);
+  viewColorBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+
   /* ---------- SECRET (clue giver) ---------- */
-  const secretColor = $('secret-color');
-  const secretIdEl = $('secret-id');
   const clueLabel = $('clue-label');
   const clueInput = $('clue-input');
   const clueSend = $('clue-send');
   const clueSkip = $('clue-skip');
   const clueError = $('clue-error');
 
-  function setSecretRevealed(revealed) {
-    if (revealed) {
-      secretColor.classList.add('secret-revealed');
-      secretColor.classList.remove('secret-hidden');
-    } else {
-      secretColor.classList.add('secret-hidden');
-      secretColor.classList.remove('secret-revealed');
-    }
-  }
-
-  let pressing = false;
-  function onPressStart(e) {
-    pressing = true;
-    if (mySecret) secretColor.style.background = mySecret.hsl;
-    setSecretRevealed(true);
-    if (e.cancelable) e.preventDefault();
-  }
-  function onPressEnd() {
-    if (!pressing) return;
-    pressing = false;
-    setSecretRevealed(false);
-    secretColor.style.background = '#555';
-  }
-  secretColor.addEventListener('pointerdown', onPressStart);
-  secretColor.addEventListener('pointerup', onPressEnd);
-  secretColor.addEventListener('pointercancel', onPressEnd);
-  secretColor.addEventListener('pointerleave', onPressEnd);
-  secretColor.addEventListener('contextmenu', (e) => e.preventDefault());
-
   function renderSecret() {
     if (!mySecret) return;
-    secretColor.style.background = '#555';
-    setSecretRevealed(false);
-    secretIdEl.textContent = coordOf(mySecret);
+    $('secret-coords').textContent = coordOf(mySecret);
     const round = state.phase === 'clue1' ? 1 : 2;
-    clueLabel.textContent = round === 1
-      ? 'Dê a 1ª dica (1 palavra):'
-      : 'Dê a 2ª dica (até 2 palavras):';
+    clueLabel.textContent = round === 1 ? 'Dê a 1ª dica (1 palavra):' : 'Dê a 2ª dica (até 2 palavras):';
     clueInput.placeholder = round === 1 ? 'ex: oceano' : 'ex: oceano profundo';
     clueInput.value = '';
     clueError.textContent = '';
     clueSend.disabled = false;
     clueSkip.disabled = false;
-    renderSecretActiveInfo();
-  }
 
-  function renderSecretActiveInfo() {
-    const info = $('secret-active-info');
-    if (!mySecret || !state) { info.classList.add('hidden'); return; }
-    const partial = computeActivePartialScore();
-    info.classList.remove('hidden');
-    $('secret-coords').textContent = coordOf(mySecret);
-    $('secret-partial').textContent = '+' + partial;
-
-    const partialWrap = $('secret-partial-wrap');
+    const hint = $('secret-partial-hint');
     if (state.phase === 'clue2') {
-      partialWrap.classList.remove('hidden');
-      renderPartialBoard('secret', { showSecret: true });
-      $('secret-partial-pts').textContent = '+' + partial + ' pts';
+      hint.classList.remove('hidden');
+      $('secret-partial').textContent = '+' + computeActivePartialScore();
     } else {
-      partialWrap.classList.add('hidden');
+      hint.classList.add('hidden');
     }
   }
 
@@ -380,18 +462,13 @@
     const round = state.phase === 'clue1' ? 1 : (state.phase === 'clue2' ? 2 : null);
     if (!round) return;
     const words = v.split(/\s+/);
-    if (round === 1 && words.length !== 1) {
-      clueError.textContent = 'Use exatamente 1 palavra.'; return;
-    }
-    if (round === 2 && (words.length < 1 || words.length > 2)) {
-      clueError.textContent = 'Use até 2 palavras.'; return;
-    }
+    if (round === 1 && words.length !== 1) { clueError.textContent = 'Use exatamente 1 palavra.'; return; }
+    if (round === 2 && (words.length < 1 || words.length > 2)) { clueError.textContent = 'Use até 2 palavras.'; return; }
     clueSend.disabled = true;
     clueSkip.disabled = true;
     socket.emit('submit_clue', { clue: v, round });
     vibrate(20);
   }
-
   function skipClue() {
     const round = state.phase === 'clue1' ? 1 : (state.phase === 'clue2' ? 2 : null);
     if (!round) return;
@@ -399,6 +476,21 @@
     clueSkip.disabled = true;
     socket.emit('submit_clue', { skip: true, round });
     vibrate(20);
+  }
+
+  function computeActivePartialScore() {
+    if (!mySecret || !state) return 0;
+    const cols = state.boardCols;
+    let pts = 0;
+    Object.entries(state.markers || {}).forEach(([name, mks]) => {
+      if (name === myName) return;
+      [1, 2].forEach(idx => {
+        const m = mks[idx];
+        if (!m) return;
+        if (G.chebyshevWrap(m, mySecret, cols) <= 1) pts += 1;
+      });
+    });
+    return Math.min(9, pts);
   }
 
   /* ---------- WAIT TURN ---------- */
@@ -425,414 +517,25 @@
       activeInfo.classList.add('hidden');
       badge.textContent = 'Aguarde sua vez';
     }
-
-    // partial board: shown to non-active waiters during clue2
-    const wtPartial = $('wt-partial-wrap');
-    if (state.phase === 'clue2' && !isActive) {
-      wtPartial.classList.remove('hidden');
-      renderPartialBoard('wt', { showSecret: false });
-    } else {
-      wtPartial.classList.add('hidden');
-    }
   }
 
   function setClueLine(el, value, afterFlag) {
-    if (value) {
-      el.textContent = value;
-      el.classList.remove('skipped');
-    } else if (afterFlag) {
-      el.textContent = '(pulou)';
-      el.classList.add('skipped');
-    } else {
-      el.textContent = '—';
-      el.classList.remove('skipped');
-    }
+    if (value) { el.textContent = value; el.classList.remove('skipped'); }
+    else if (afterFlag) { el.textContent = '(pulou)'; el.classList.add('skipped'); }
+    else { el.textContent = '—'; el.classList.remove('skipped'); }
   }
 
-  function computeActivePartialScore() {
-    if (!mySecret || !state) return 0;
-    const cols = state.boardCols;
-    let pts = 0;
-    const markers = state.markers || {};
-    Object.entries(markers).forEach(([name, mks]) => {
-      if (name === myName) return;
-      [1, 2].forEach(idx => {
-        const m = mks[idx];
-        if (!m) return;
-        const d = G.chebyshevWrap(m, mySecret, cols);
-        if (d <= 1) pts += 1;
-      });
-    });
-    return Math.min(9, pts);
-  }
-
-  /* ---------- PARTIAL BOARD (clue2 phase: shown to everyone with markers1 results) ---------- */
-  const partialBoards = new Map();
-
-  function getPartialBoard(scope) {
-    if (partialBoards.has(scope)) return partialBoards.get(scope);
-    const wrap = document.querySelector(`.partial-board-wrap[data-board="${scope}"]`);
-    if (!wrap) return null;
-    const pan = wrap.querySelector('.partial-board-pan');
-    const board = wrap.querySelector('.partial-board');
-    const obj = { wrap, pan, board, cellEls: [], cols: 0, rows: 0, zoom: 1, panX: 0, panY: 0 };
-    attachPartialPanZoom(obj);
-    partialBoards.set(scope, obj);
-    return obj;
-  }
-
-  function buildPartialBoard(scope) {
-    if (!state || !G) return null;
-    const pb = getPartialBoard(scope);
-    if (!pb) return null;
-    const cols = state.boardCols, rows = state.boardRows;
-    if (pb.cols === cols && pb.rows === rows && pb.cellEls.length) return pb;
-    pb.cols = cols; pb.rows = rows;
-    const cells = G.generateBoard(cols, rows);
-    pb.board.innerHTML = '';
-    pb.board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    pb.board.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-    pb.cellEls = cells.map(c => {
-      const div = document.createElement('div');
-      div.className = 'partial-cell';
-      div.style.background = G.cellHsl(c);
-      pb.board.appendChild(div);
-      return div;
-    });
-    return pb;
-  }
-
-  function renderPartialBoard(scope, options) {
-    const pb = buildPartialBoard(scope);
-    if (!pb) return;
-    pb.cellEls.forEach(el => {
-      el.classList.remove('secret-here');
-      el.querySelectorAll('.marker, .dist-badge').forEach(n => n.remove());
-    });
-    const showSecret = !!options.showSecret && mySecret;
-    if (showSecret) {
-      const idx = mySecret.row * pb.cols + mySecret.col;
-      const el = pb.cellEls[idx];
-      if (el) el.classList.add('secret-here');
-    }
-    Object.entries(state.markers || {}).forEach(([name, mks]) => {
-      const player = state.players.find(p => p.name === name);
-      if (!player) return;
-      [1, 2].forEach(idx => {
-        const m = mks[idx];
-        if (!m) return;
-        const el = pb.cellEls[m.row * pb.cols + m.col];
-        if (!el) return;
-        const dot = document.createElement('div');
-        dot.className = 'marker' + (idx === 2 ? ' m2' : '');
-        dot.style.background = player.color;
-        dot.textContent = name.charAt(0).toUpperCase();
-        el.appendChild(dot);
-        if (showSecret && mySecret) {
-          const d = G.chebyshevWrap({ col: m.col, row: m.row }, { col: mySecret.col, row: mySecret.row }, pb.cols);
-          const badge = document.createElement('div');
-          const cls = d === 0 ? 'd0' : d === 1 ? 'd1' : d === 2 ? 'd2' : 'd3';
-          badge.className = `dist-badge ${cls}`;
-          badge.textContent = d;
-          el.appendChild(badge);
-        }
-      });
-    });
-  }
-
-  function attachPartialPanZoom(pb) {
-    const pointers = new Map();
-    let pinchStart = null, panStart = null;
-    function apply() { pb.pan.style.transform = `translate(${pb.panX}px, ${pb.panY}px) scale(${pb.zoom})`; }
-    function clamp() {
-      const r = pb.wrap.getBoundingClientRect();
-      const ext = (pb.zoom - 1) / 2;
-      pb.panX = Math.max(-r.width * ext, Math.min(r.width * ext, pb.panX));
-      pb.panY = Math.max(-r.height * ext, Math.min(r.height * ext, pb.panY));
-    }
-    function setZ(z, cx, cy) {
-      const newZ = Math.max(1, Math.min(5, z));
-      if (cx == null) { pb.zoom = newZ; clamp(); apply(); return; }
-      const r = pb.wrap.getBoundingClientRect();
-      const mx = cx - r.left, my = cy - r.top;
-      const ratio = newZ / pb.zoom;
-      pb.panX = mx - (mx - pb.panX) * ratio;
-      pb.panY = my - (my - pb.panY) * ratio;
-      pb.zoom = newZ;
-      clamp(); apply();
-    }
-    pb.wrap.addEventListener('pointerdown', (e) => {
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pointers.size === 2) {
-        const [a, b] = [...pointers.values()];
-        pinchStart = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom: pb.zoom };
-      } else if (pointers.size === 1 && pb.zoom > 1) {
-        panStart = { x: e.clientX, y: e.clientY, panX: pb.panX, panY: pb.panY };
-      }
-    });
-    pb.wrap.addEventListener('pointermove', (e) => {
-      if (!pointers.has(e.pointerId)) return;
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pointers.size === 2 && pinchStart) {
-        const [a, b] = [...pointers.values()];
-        const d = Math.hypot(a.x - b.x, a.y - b.y);
-        setZ(pinchStart.zoom * (d / pinchStart.dist), (a.x + b.x) / 2, (a.y + b.y) / 2);
-      } else if (pointers.size === 1 && panStart) {
-        pb.panX = panStart.panX + (e.clientX - panStart.x);
-        pb.panY = panStart.panY + (e.clientY - panStart.y);
-        clamp(); apply();
-      }
-    });
-    function endPtr(e) {
-      pointers.delete(e.pointerId);
-      if (pointers.size < 2) pinchStart = null;
-      if (pointers.size === 0) panStart = null;
-    }
-    pb.wrap.addEventListener('pointerup', endPtr);
-    pb.wrap.addEventListener('pointercancel', endPtr);
-    pb.wrap.addEventListener('pointerleave', endPtr);
-    pb.wrap.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      setZ(pb.zoom + (-Math.sign(e.deltaY) * 0.2), e.clientX, e.clientY);
-    }, { passive: false });
-    let lastTap = 0;
-    pb.wrap.addEventListener('pointerdown', () => {
-      const now = Date.now();
-      if (now - lastTap < 300) {
-        pb.zoom = 1; pb.panX = 0; pb.panY = 0; apply();
-      }
-      lastTap = now;
-    });
-  }
-
-  /* ---------- PLACE MARKER (mini board on phone) ---------- */
-  const miniWrap = $('mini-board-wrap');
-  const miniPan = $('mini-board-pan');
-  const miniBoard = $('mini-board');
-  const pmConfirm = $('pm-confirm');
-  const pmSelected = $('pm-selected');
-
-  function buildMiniBoard() {
-    if (!state || !G) return;
-    const cols = state.boardCols, rows = state.boardRows;
-    if (cols === miniCols && rows === miniRows && miniCellEls.length) return;
-    miniCols = cols; miniRows = rows;
-    miniCells = G.generateBoard(cols, rows);
-    miniBoard.innerHTML = '';
-    miniBoard.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    miniBoard.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-
-    const colLabels = $('mini-col-labels');
-    const rowLabels = $('mini-row-labels');
-    colLabels.innerHTML = '';
-    colLabels.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    for (let i = 0; i < cols; i++) {
-      const s = document.createElement('span');
-      s.textContent = colLabel(i);
-      colLabels.appendChild(s);
-    }
-    rowLabels.innerHTML = '';
-    rowLabels.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-    for (let i = 0; i < rows; i++) {
-      const s = document.createElement('span');
-      s.textContent = rowLabel(i);
-      rowLabels.appendChild(s);
-    }
-
-    miniCellEls = [];
-    miniCells.forEach(c => {
-      const div = document.createElement('div');
-      div.className = 'mini-cell';
-      div.style.background = G.cellHsl(c);
-      div.dataset.col = c.col; div.dataset.row = c.row;
-      div.addEventListener('click', () => onMiniCellClick(c));
-      miniBoard.appendChild(div);
-      miniCellEls.push(div);
-    });
-  }
-  function miniCellEl(col, row) { return miniCellEls[row * miniCols + col]; }
-
-  function onMiniCellClick(c) {
-    if (!state) return;
-    if (state.phase !== 'markers1' && state.phase !== 'markers2') return;
-    if (!(state.pendingMarkers || []).includes(myName)) return;
-    if (pendingPick && pendingPick.col === c.col && pendingPick.row === c.row) {
-      const markerIndex = state.phase === 'markers1' ? 1 : 2;
-      socket.emit('place_marker', { playerName: myName, col: c.col, row: c.row, markerIndex });
-      vibrate(40);
-      beep(720, 90, 'sine', 0.06);
-      clearPendingPick();
-      return;
-    }
-    setPendingPick(c);
-    beep(440, 50, 'sine', 0.04);
-    vibrate(15);
-  }
-
-  function setPendingPick(c) {
-    clearPendingPick();
-    pendingPick = { col: c.col, row: c.row };
-    const el = miniCellEl(c.col, c.row);
-    if (!el) return;
-    const me = state.players.find(p => p.name === myName);
-    const color = me?.color || '#ffffff';
-    el.style.setProperty('--my-color', color);
-    el.style.setProperty('--my-glow', hexToRgba(color, 0.55));
-    el.classList.add('pending');
-    pmSelected.classList.add('has-pick');
-    pmSelected.textContent = `Selecionado: ${colLabel(c.col)}${rowLabel(c.row)} — toque novamente ou no botão abaixo para confirmar`;
-    pmConfirm.disabled = false;
-  }
-  function clearPendingPick() {
-    if (pendingPick) {
-      const el = miniCellEl(pendingPick.col, pendingPick.row);
-      if (el) {
-        el.classList.remove('pending');
-        el.style.removeProperty('--my-color');
-        el.style.removeProperty('--my-glow');
-      }
-    }
-    pendingPick = null;
-    pmSelected.classList.remove('has-pick');
-    pmSelected.textContent = 'Selecione uma cor…';
-    pmConfirm.disabled = true;
-  }
-  function hexToRgba(hex, alpha) {
-    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
-    if (!m) return `rgba(255,255,255,${alpha})`;
-    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
-    return `rgba(${r},${g},${b},${alpha})`;
-  }
-
-  pmConfirm.addEventListener('click', () => {
-    if (!pendingPick || !state) return;
-    if (state.phase !== 'markers1' && state.phase !== 'markers2') return;
-    if (!(state.pendingMarkers || []).includes(myName)) return;
-    const markerIndex = state.phase === 'markers1' ? 1 : 2;
-    socket.emit('place_marker', { playerName: myName, col: pendingPick.col, row: pendingPick.row, markerIndex });
-    vibrate(40);
-    beep(720, 90, 'sine', 0.06);
-    clearPendingPick();
-  });
-
+  /* ---------- PLACE MARKER content ---------- */
   function renderPlaceMarker() {
-    buildMiniBoard();
     setClueLine($('pm-clue-1'), state.clue1, ['markers1', 'clue2', 'markers2', 'reveal', 'end'].includes(state.phase));
     setClueLine($('pm-clue-2'), state.clue2, ['markers2', 'reveal', 'end'].includes(state.phase));
     $('pm-hint').textContent = state.phase === 'markers1'
-      ? 'Toque uma cor para selecionar, toque de novo para confirmar.'
+      ? 'Toque uma cor no tabuleiro acima para selecionar, toque de novo para confirmar.'
       : 'Toque para adicionar o segundo marcador, toque de novo para confirmar.';
-    renderMiniMarkers();
-  }
-  function renderMiniMarkers() {
-    miniCellEls.forEach(el => el.querySelectorAll('.marker').forEach(m => m.remove()));
-    if (!state) return;
-    Object.entries(state.markers || {}).forEach(([name, mks]) => {
-      const player = state.players.find(p => p.name === name);
-      if (!player) return;
-      [1, 2].forEach(idx => {
-        const m = mks[idx];
-        if (!m) return;
-        const el = miniCellEl(m.col, m.row);
-        if (!el) return;
-        const dot = document.createElement('div');
-        dot.className = 'marker' + (idx === 2 ? ' m2' : '');
-        dot.style.background = player.color;
-        dot.textContent = name.charAt(0).toUpperCase();
-        el.appendChild(dot);
-      });
-    });
+    updatePendingUI();
   }
 
-  /* zoom & pan */
-  function applyTransform() {
-    miniPan.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
-  }
-  function setZoom(z, cx, cy) {
-    const newZ = Math.max(1, Math.min(5, z));
-    if (cx == null || cy == null) {
-      zoom = newZ; clampPan(); applyTransform(); return;
-    }
-    const rect = miniWrap.getBoundingClientRect();
-    const mx = cx - rect.left, my = cy - rect.top;
-    const ratio = newZ / zoom;
-    panX = mx - (mx - panX) * ratio;
-    panY = my - (my - panY) * ratio;
-    zoom = newZ;
-    clampPan();
-    applyTransform();
-  }
-  function clampPan() {
-    const rect = miniWrap.getBoundingClientRect();
-    const w = rect.width, h = rect.height;
-    const ext = (zoom - 1) / 2;
-    const maxX = w * ext, maxY = h * ext;
-    panX = Math.max(-maxX, Math.min(maxX, panX));
-    panY = Math.max(-maxY, Math.min(maxY, panY));
-  }
-
-  $('mini-zoom-in').addEventListener('click', (e) => { e.stopPropagation(); setZoom(zoom + 0.5); });
-  $('mini-zoom-out').addEventListener('click', (e) => { e.stopPropagation(); setZoom(zoom - 0.5); });
-  $('mini-zoom-reset').addEventListener('click', (e) => { e.stopPropagation(); zoom = 1; panX = 0; panY = 0; applyTransform(); });
-
-  const pointers = new Map();
-  let pinchStart = null;
-  let panStart = null;
-  let movedSinceDown = false;
-
-  miniWrap.addEventListener('pointerdown', (e) => {
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    movedSinceDown = false;
-    if (pointers.size === 2) {
-      const [a, b] = [...pointers.values()];
-      pinchStart = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom };
-    } else if (pointers.size === 1 && zoom > 1) {
-      panStart = { x: e.clientX, y: e.clientY, panX, panY };
-    }
-  });
-  miniWrap.addEventListener('pointermove', (e) => {
-    if (!pointers.has(e.pointerId)) return;
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointers.size === 2 && pinchStart) {
-      const [a, b] = [...pointers.values()];
-      const d = Math.hypot(a.x - b.x, a.y - b.y);
-      const newZ = pinchStart.zoom * (d / pinchStart.dist);
-      const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
-      setZoom(newZ, cx, cy);
-      movedSinceDown = true;
-    } else if (pointers.size === 1 && panStart) {
-      const dx = e.clientX - panStart.x, dy = e.clientY - panStart.y;
-      if (Math.hypot(dx, dy) > 4) movedSinceDown = true;
-      panX = panStart.panX + dx;
-      panY = panStart.panY + dy;
-      clampPan();
-      applyTransform();
-    }
-  });
-  function cancelPointer(e) {
-    pointers.delete(e.pointerId);
-    if (pointers.size < 2) pinchStart = null;
-    if (pointers.size === 0) panStart = null;
-  }
-  miniWrap.addEventListener('pointerup', cancelPointer);
-  miniWrap.addEventListener('pointercancel', cancelPointer);
-  miniWrap.addEventListener('pointerleave', cancelPointer);
-
-  miniBoard.addEventListener('click', (e) => {
-    if (movedSinceDown) {
-      e.stopPropagation();
-      e.preventDefault();
-      movedSinceDown = false;
-    }
-  }, true);
-
-  miniWrap.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const delta = -Math.sign(e.deltaY) * 0.2;
-    setZoom(zoom + delta, e.clientX, e.clientY);
-  }, { passive: false });
-
-  /* ---------- REVEAL ---------- */
+  /* ---------- REVEAL content ---------- */
   const nextRoundBtn = $('next-round-btn');
   nextRoundBtn.addEventListener('click', () => {
     socket.emit('next_round');
@@ -860,72 +563,10 @@
         ? `Aguardando ${state.activeName} ver o placar final…`
         : `Aguardando ${state.activeName} passar a vez…`;
     }
-    renderRevealBoard();
-  }
-
-  function renderRevealBoard() {
-    if (!state || !G) return;
-    const cols = state.boardCols, rows = state.boardRows;
-    const board = $('reveal-board');
-    const cells = G.generateBoard(cols, rows);
-    board.innerHTML = '';
-    board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    board.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-
-    const rColLabels = $('reveal-col-labels');
-    const rRowLabels = $('reveal-row-labels');
-    rColLabels.innerHTML = '';
-    rColLabels.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    for (let i = 0; i < cols; i++) {
-      const s = document.createElement('span');
-      s.textContent = colLabel(i);
-      rColLabels.appendChild(s);
-    }
-    rRowLabels.innerHTML = '';
-    rRowLabels.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-    for (let i = 0; i < rows; i++) {
-      const s = document.createElement('span');
-      s.textContent = rowLabel(i);
-      rRowLabels.appendChild(s);
-    }
-
-    const rc = state.revealCell;
-    cells.forEach(c => {
-      const div = document.createElement('div');
-      div.className = 'reveal-cell';
-      div.style.background = G.cellHsl(c);
-      if (rc) {
-        const d = G.chebyshevWrap(c, rc, cols);
-        if (d === 0) {
-          div.classList.add('secret-cell');
-        } else if (d <= 1) {
-          div.classList.add('score-3x3');
-        } else if (d <= 2) {
-          div.classList.add('score-5x5');
-        }
-      }
-      const markers = state.markers || {};
-      Object.entries(markers).forEach(([name, mks]) => {
-        const player = state.players.find(p => p.name === name);
-        if (!player) return;
-        [1, 2].forEach(idx => {
-          const m = mks[idx];
-          if (!m || m.col !== c.col || m.row !== c.row) return;
-          const dot = document.createElement('div');
-          dot.className = 'reveal-marker' + (idx === 2 ? ' m2' : '');
-          dot.style.background = player.color;
-          dot.textContent = name.charAt(0).toUpperCase();
-          div.appendChild(dot);
-        });
-      });
-      board.appendChild(div);
-    });
   }
 
   /* ---------- END ---------- */
-  $('end-play-again-btn').addEventListener('click', () => {
-    socket.emit('reset_game');
-  });
+  $('end-play-again-btn').addEventListener('click', () => socket.emit('reset_game'));
 
   let endRendered = false;
   let confettiAnim = null;
@@ -1045,7 +686,6 @@
   let prevPhase = null;
   let prevActive = null;
   let prevWasPending = false;
-  let joinAttempted = false;
 
   function route() {
     if (!state) { showScreen('loading'); return; }
@@ -1069,13 +709,12 @@
     }
 
     if (state.status === 'ended') {
-      renderEnd();
       showScreen('end');
+      renderEnd();
       return;
     }
 
     if (state.status !== 'playing') { showScreen('login'); return; }
-
     if (!myPlayer) {
       if (!joinAttempted) {
         joinAttempted = true;
@@ -1088,34 +727,28 @@
     const phase = state.phase;
 
     renderMiniRank();
+    applyBoardForState();
 
-    const turnChanged = prevActive !== state.activeName || prevPhase !== phase;
     const myPending = (state.pendingMarkers || []).includes(myName);
-    const wasMyTurnToMark = prevWasPending;
+    const turnChanged = prevActive !== state.activeName || prevPhase !== phase;
 
     if (phase === 'clue1' || phase === 'clue2') {
       if (isActive) {
         showScreen('secret');
         renderSecret();
-        if (turnChanged && (prevPhase !== phase || prevActive !== state.activeName)) {
-          notifyMyTurn('clue');
-        }
+        if (turnChanged) notifyMyTurn('clue');
       } else {
         showScreen('wait-turn');
         renderWaitTurn();
       }
-      prevPhase = phase; prevActive = state.activeName; prevWasPending = myPending;
-      return;
-    }
-
-    if (phase === 'markers1' || phase === 'markers2') {
+    } else if (phase === 'markers1' || phase === 'markers2') {
       if (isActive) {
         showScreen('wait-turn');
         renderWaitTurn();
       } else if (myPending) {
         showScreen('place-marker');
         renderPlaceMarker();
-        if (!wasMyTurnToMark) notifyMyTurn('mark');
+        if (!prevWasPending) notifyMyTurn('mark');
       } else {
         showScreen('wait-turn');
         renderWaitTurn();
@@ -1124,22 +757,18 @@
           ? `Você já marcou. Aguardando ${remaining} jogador${remaining > 1 ? 'es' : ''}…`
           : 'Todos marcaram! Aguardando…';
       }
-      prevPhase = phase; prevActive = state.activeName; prevWasPending = myPending;
-      return;
+    } else if (phase === 'reveal') {
+      showScreen('reveal');
+      renderReveal();
     }
 
-    if (phase === 'reveal') {
-      renderReveal();
-      showScreen('reveal');
-      clearPendingPick();
-      prevPhase = phase; prevActive = state.activeName; prevWasPending = myPending;
-      return;
-    }
+    prevPhase = phase;
+    prevActive = state.activeName;
+    prevWasPending = myPending;
   }
 
   /* ---------- SOCKET ---------- */
   socket.on('connect', () => {
-    console.log('[CCD] connect myRoom=', myRoom, 'myName=', myName);
     if (myRoom) {
       const savedPw = sessionStorage.getItem('ccd:room-pw') || undefined;
       socket.emit('join_room', { code: myRoom, password: savedPw });
@@ -1152,7 +781,6 @@
   });
 
   socket.on('room_joined', (d) => {
-    console.log('[CCD] room_joined', d);
     myRoom = d.code;
     sessionStorage.setItem('ccd:room', myRoom);
     roomJoinBtn.disabled = false;
@@ -1164,12 +792,15 @@
   });
 
   socket.on('game_state', (s) => {
-    console.log('[CCD] game_state status=', s.status, 'lobbyPlayers=', s.lobbyPlayers, 'myName=', myName);
     const prev = state;
     state = s;
     if (prev) {
       if (prev.activeName !== s.activeName || prev.phase !== s.phase) {
-        clearPendingPick();
+        pendingPick = null;
+        updatePendingUI();
+      }
+      if (prev.boardCols !== s.boardCols || prev.boardRows !== s.boardRows) {
+        if (board) { board = null; $('game-board-host').innerHTML = ''; }
       }
     }
     const inActivePhase = ['clue1', 'markers1', 'clue2', 'markers2'].includes(s.phase);
@@ -1181,16 +812,15 @@
 
   socket.on('your_secret', (s) => {
     mySecret = s;
-    if (state && (state.phase === 'clue1' || state.phase === 'clue2')) {
-      if (state.activeName === myName) renderSecret();
-    }
-    if (state && (state.phase === 'markers1' || state.phase === 'markers2') && state.activeName === myName) {
-      renderWaitTurn();
+    if (state && state.activeName === myName) {
+      const phase = state.phase;
+      if (phase === 'clue1' || phase === 'clue2') renderSecret();
+      else if (phase === 'markers1' || phase === 'markers2') renderWaitTurn();
+      applyBoardForState();
     }
   });
 
   socket.on('join_accepted', (d) => {
-    console.log('[CCD] join_accepted', d);
     myName = d.playerName;
     sessionStorage.setItem('ccd:name', myName);
     joinAttempted = false;
@@ -1199,7 +829,6 @@
   });
 
   socket.on('join_rejected', (d) => {
-    console.log('[CCD] join_rejected', d);
     const reason = d?.reason || 'Erro ao entrar.';
     if (d?.needsPassword) {
       $('password-field').classList.remove('hidden');
@@ -1245,11 +874,6 @@
     vibrate(60);
   });
 
-  socket.on('reveal', () => {
-    vibrate(80);
-  });
-
-  socket.on('game_over', () => {
-    vibrate([60, 60, 60]);
-  });
+  socket.on('reveal', () => { vibrate(80); });
+  socket.on('game_over', () => { vibrate([60, 60, 60]); });
 })();

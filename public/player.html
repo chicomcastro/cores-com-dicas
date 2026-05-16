@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/board-view.css?v=__BUILD__" />
   <link rel="stylesheet" href="/css/player.css?v=__BUILD__" />
 </head>
 <body>
@@ -98,140 +99,85 @@
       </div>
     </section>
 
-    <!-- ACTIVE: SECRET COLOR -->
-    <section id="secret" class="screen">
-      <div id="secret-color" class="secret-color secret-hidden">
-        <div class="secret-veil">
-          <div class="veil-icon">👁</div>
-          <div class="veil-text">Toque e segure para ver</div>
-        </div>
-        <div class="secret-meta">
-          <div class="secret-tag">Sua cor secreta</div>
-          <div class="secret-id" id="secret-id">—</div>
-        </div>
-      </div>
-      <div class="clue-form">
-        <label id="clue-label">Dê a 1ª dica (1 palavra):</label>
-        <input id="clue-input" type="text" placeholder="ex: oceano" autocomplete="off" autocapitalize="off" autocorrect="off" />
-        <div class="clue-buttons">
-          <button id="clue-send" class="primary big">Enviar Dica</button>
-          <button id="clue-skip" class="secondary skip-btn" title="Pular sem digitar (você fala a dica)">Pular ⤼</button>
-        </div>
-        <p id="clue-error" class="error"></p>
-        <div id="secret-active-info" class="active-info hidden">
-          <div class="active-info-row">
-            <span class="active-info-label">Sua cor está em</span>
-            <span id="secret-coords" class="active-info-coords">—</span>
-          </div>
-          <div class="active-info-row">
-            <span class="active-info-label">Pontos parciais</span>
-            <span id="secret-partial" class="active-info-points">+0</span>
-          </div>
-        </div>
+    <!-- GAME LAYOUT (persistent board on top + screen-specific content) -->
+    <div id="game-layout" class="game-layout hidden">
+      <div id="game-board-host" class="game-board-host"></div>
 
-        <div id="secret-partial-wrap" class="partial-wrap hidden">
-          <div class="partial-header">
-            <span class="partial-title">Parcial após a 1ª dica</span>
-            <span class="partial-points" id="secret-partial-pts">+0 pts</span>
+      <div class="game-content">
+        <!-- SECRET (clue giver) -->
+        <section id="secret" class="game-screen">
+          <div class="game-content-inner">
+            <div class="active-info-row">
+              <span class="active-info-label">Sua cor está em</span>
+              <span id="secret-coords" class="active-info-coords">—</span>
+              <button id="view-color-btn" class="view-color-btn" type="button">Ver minha cor 👁</button>
+            </div>
+            <p class="hint mini" id="view-color-hint">Toque e segure o botão para revelar a cor.</p>
+
+            <label id="clue-label" class="clue-label">Dê a 1ª dica (1 palavra):</label>
+            <input id="clue-input" type="text" placeholder="ex: oceano" autocomplete="off" autocapitalize="off" autocorrect="off" />
+            <div class="clue-buttons">
+              <button id="clue-send" class="primary big">Enviar Dica</button>
+              <button id="clue-skip" class="secondary skip-btn" title="Pular sem digitar (você fala a dica)">Pular ⤼</button>
+            </div>
+            <p id="clue-error" class="error"></p>
+            <p id="secret-partial-hint" class="hint mini hidden">Pontos parciais até agora: <strong id="secret-partial">+0</strong></p>
           </div>
-          <div class="partial-board-wrap" data-board="secret">
-            <div class="partial-board-pan">
-              <div class="partial-board"></div>
+        </section>
+
+        <!-- WAIT TURN -->
+        <section id="wait-turn" class="game-screen">
+          <div class="game-content-inner wait-content">
+            <div class="badge" id="wt-badge">Aguarde sua vez</div>
+            <h2>Vez de <span id="wt-active">—</span></h2>
+            <div id="wt-clue-block" class="wt-clue-block">
+              <div class="clue-line"><span class="clue-tag">1</span><span id="wt-clue-1">—</span></div>
+              <div class="clue-line"><span class="clue-tag">2</span><span id="wt-clue-2">—</span></div>
+            </div>
+            <p id="wt-hint" class="hint"></p>
+            <div id="wt-active-info" class="active-info hidden">
+              <div class="active-info-row">
+                <span class="active-info-label">Sua cor está em</span>
+                <span id="wt-coords" class="active-info-coords">—</span>
+              </div>
+              <div class="active-info-row">
+                <span class="active-info-label">Pontos parciais</span>
+                <span id="wt-partial" class="active-info-points">+0</span>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-    </section>
+        </section>
 
-    <!-- WAITING TURN (other player active OR active waiting markers) -->
-    <section id="wait-turn" class="screen">
-      <div class="wait-turn-inner">
-        <div class="badge" id="wt-badge">Aguarde sua vez</div>
-        <h2>Vez de <span id="wt-active">—</span></h2>
-        <div id="wt-clue-block">
-          <div class="clue-line"><span class="clue-tag">1</span><span id="wt-clue-1">—</span></div>
-          <div class="clue-line"><span class="clue-tag">2</span><span id="wt-clue-2">—</span></div>
-        </div>
-        <p id="wt-hint" class="hint"></p>
-
-        <div id="wt-active-info" class="active-info hidden">
-          <div class="active-info-row">
-            <span class="active-info-label">Sua cor está em</span>
-            <span id="wt-coords" class="active-info-coords">—</span>
-          </div>
-          <div class="active-info-row">
-            <span class="active-info-label">Pontos parciais</span>
-            <span id="wt-partial" class="active-info-points">+0</span>
-          </div>
-        </div>
-
-        <div id="wt-partial-wrap" class="partial-wrap hidden">
-          <div class="partial-header">
-            <span class="partial-title">Parcial após a 1ª dica</span>
-          </div>
-          <div class="partial-board-wrap" data-board="wt">
-            <div class="partial-board-pan">
-              <div class="partial-board"></div>
+        <!-- PLACE MARKER -->
+        <section id="place-marker" class="game-screen">
+          <div class="game-content-inner pm-content">
+            <div class="badge">Sua vez de marcar</div>
+            <div id="pm-clue-block" class="pm-clue-block">
+              <div class="clue-line"><span class="clue-tag">1</span><span id="pm-clue-1">—</span></div>
+              <div class="clue-line"><span class="clue-tag">2</span><span id="pm-clue-2">—</span></div>
             </div>
+            <p class="hint mini" id="pm-hint">Toque uma cor para selecionar, toque de novo para confirmar.</p>
+            <div class="pm-selected" id="pm-selected">Selecione uma cor…</div>
+            <button id="pm-confirm" class="primary big" disabled>Confirmar</button>
           </div>
-        </div>
-      </div>
-    </section>
+        </section>
 
-    <!-- PLACE MARKER ON PHONE -->
-    <section id="place-marker" class="screen">
-      <div class="place-header">
-        <div class="badge">Sua vez de marcar</div>
-        <div id="pm-clue-block" class="pm-clue-block">
-          <div class="clue-line"><span class="clue-tag">1</span><span id="pm-clue-1">—</span></div>
-          <div class="clue-line"><span class="clue-tag">2</span><span id="pm-clue-2">—</span></div>
-        </div>
-        <p class="hint mini" id="pm-hint">Toque uma cor para selecionar, toque de novo para confirmar.</p>
-      </div>
-      <div class="mini-board-wrap" id="mini-board-wrap">
-        <div class="mini-board-pan" id="mini-board-pan">
-          <div class="mini-board-grid">
-            <div class="mini-corner"></div>
-            <div class="mini-col-labels" id="mini-col-labels"></div>
-            <div class="mini-row-labels" id="mini-row-labels"></div>
-            <div class="mini-board" id="mini-board"></div>
+        <!-- REVEAL -->
+        <section id="reveal" class="game-screen">
+          <div class="game-content-inner reveal-content">
+            <div class="badge">Rodada encerrada</div>
+            <div class="score-row">
+              <div class="score-big" id="score-big">+0</div>
+              <div class="total-score">Total: <strong id="total-score">0</strong></div>
+            </div>
+            <button id="next-round-btn" class="primary big">Próxima Rodada</button>
+            <p id="reveal-wait-msg" class="hint hidden"></p>
           </div>
-        </div>
-        <div class="mini-board-hud">
-          <button class="zoom-btn" id="mini-zoom-out" aria-label="Diminuir zoom">−</button>
-          <button class="zoom-btn" id="mini-zoom-reset" aria-label="Resetar zoom">⤾</button>
-          <button class="zoom-btn" id="mini-zoom-in" aria-label="Aumentar zoom">+</button>
-        </div>
+        </section>
       </div>
-      <div class="place-footer">
-        <div class="pm-selected" id="pm-selected">Selecione uma cor…</div>
-        <button id="pm-confirm" class="primary big" disabled>Confirmar</button>
-      </div>
-    </section>
+    </div>
 
-    <!-- REVEAL / SCORES -->
-    <section id="reveal" class="screen">
-      <div class="reveal-top">
-        <div class="badge">Rodada encerrada</div>
-        <div class="score-big" id="score-big">+0</div>
-        <p class="hint">Pontos nesta rodada</p>
-        <div class="total-score">Total: <strong id="total-score">0</strong></div>
-      </div>
-      <div class="reveal-board-wrap" id="reveal-board-wrap">
-        <div class="reveal-board-grid">
-          <div class="reveal-corner"></div>
-          <div class="reveal-col-labels" id="reveal-col-labels"></div>
-          <div class="reveal-row-labels" id="reveal-row-labels"></div>
-          <div class="reveal-board" id="reveal-board"></div>
-        </div>
-      </div>
-      <div class="reveal-footer">
-        <button id="next-round-btn" class="primary big">Próxima Rodada</button>
-        <p id="reveal-wait-msg" class="hint hidden"></p>
-      </div>
-    </section>
-
-    <!-- GAME OVER -->
+    <!-- GAME OVER (no board) -->
     <section id="end" class="screen">
       <canvas id="player-confetti"></canvas>
       <div class="end-content">
@@ -246,10 +192,18 @@
       </div>
     </section>
 
-    <!-- EXIT BUTTON (visible during game) -->
+    <!-- COLOR REVEAL OVERLAY (press-and-hold view-color button) -->
+    <div id="color-reveal-overlay" class="color-reveal-overlay hidden">
+      <div class="color-reveal-meta">
+        <div class="color-reveal-tag">Sua cor secreta</div>
+        <div class="color-reveal-id" id="color-reveal-id">—</div>
+      </div>
+    </div>
+
+    <!-- EXIT BUTTON -->
     <button id="exit-room-btn" class="exit-room-btn hidden" title="Sair da sala">✕</button>
 
-    <!-- MINI RANKING (sticky bottom, visible during the game) -->
+    <!-- MINI RANKING -->
     <div id="mini-rank" class="mini-rank hidden">
       <div id="mini-round-chip" class="mini-round-chip">
         <span class="rc-label">R</span><span id="mini-round-cur">1</span>/<span id="mini-round-tot">2</span>
@@ -262,6 +216,7 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/colors.js?v=__BUILD__"></script>
+  <script src="/js/board-view.js?v=__BUILD__"></script>
   <script src="/js/player.js?v=__BUILD__"></script>
 </body>
 </html>
