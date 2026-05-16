@@ -6,8 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
 jobs:
-  check:
+  unit:
+    name: Unit & integration (coverage)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +25,199 @@ jobs:
 
       - run: npm ci
 
+      - name: Run Jest with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
+
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'coverage/coverage-summary.json';
+            if (!fs.existsSync(path)) {
+              core.warning('No coverage summary found at ' + path);
+              return;
+            }
+            const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const t = data.total;
+            const fmt = (m) => `${m.pct.toFixed(2)}% (${m.covered}/${m.total})`;
+            const emoji = (pct) => pct >= 90 ? '🟢' : pct >= 80 ? '🟡' : '🔴';
+            const body = [
+              '## 📊 Test coverage',
+              '',
+              '| Metric | Coverage |',
+              '|--------|----------|',
+              `| ${emoji(t.statements.pct)} Statements | ${fmt(t.statements)} |`,
+              `| ${emoji(t.branches.pct)} Branches | ${fmt(t.branches)} |`,
+              `| ${emoji(t.functions.pct)} Functions | ${fmt(t.functions)} |`,
+              `| ${emoji(t.lines.pct)} Lines | ${fmt(t.lines)} |`,
+              '',
+              `_Threshold: 90% statements / functions / lines, 80% branches. Run #${context.runNumber}._`,
+              '<!-- coverage-comment -->',
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const list = await github.rest.issues.listComments({ owner, repo, issue_number });
+            const existing = list.data.find(c => c.body && c.body.includes('<!-- coverage-comment -->'));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+  e2e:
+    name: E2E + visual catalog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cypress run
+        uses: cypress-io/github-action@v6
+        with:
+          start: node server.js
+          wait-on: 'http://localhost:3000/player'
+          wait-on-timeout: 60
+          browser: electron
+          install: false
+
+      - name: Upload screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-screenshots
+          path: cypress/screenshots/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload videos on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-videos
+          path: cypress/videos/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Publish screenshots to preview branch
+        if: github.event_name == 'pull_request' && always()
+        id: publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -e
+          if [ ! -d cypress/screenshots ] || [ -z "$(ls -A cypress/screenshots 2>/dev/null)" ]; then
+            echo "No screenshots directory, skipping"
+            echo "branch=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BRANCH="screenshots/pr-${PR_NUMBER}"
+          DEST_DIR="$(pwd)/_screenshots_publish"
+          mkdir -p "$DEST_DIR"
+          cp -r cypress/screenshots/* "$DEST_DIR"/
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # checkout an orphan branch (clean each run)
+          git checkout --orphan "$BRANCH"
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p "screenshots/run-${RUN_ID}"
+          cp -r "$DEST_DIR"/* "screenshots/run-${RUN_ID}/"
+          echo "Screenshots from PR #${PR_NUMBER} run ${RUN_ID}" > README.md
+
+          git add screenshots README.md
+          git commit -m "Screenshots for PR #${PR_NUMBER} run ${RUN_ID}" || { echo "nothing to commit"; exit 0; }
+          git push -f origin "$BRANCH"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "run_dir=screenshots/run-${RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment visual catalog on PR
+        if: github.event_name == 'pull_request' && steps.publish.outputs.branch != ''
+        uses: actions/github-script@v7
+        env:
+          BRANCH: ${{ steps.publish.outputs.branch }}
+          RUN_DIR: ${{ steps.publish.outputs.run_dir }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const branch = process.env.BRANCH;
+            const runDir = process.env.RUN_DIR;
+            if (!branch) return;
+
+            const root = 'cypress/screenshots';
+            if (!fs.existsSync(root)) return;
+            const files = [];
+            for (const spec of fs.readdirSync(root)) {
+              const specDir = path.join(root, spec);
+              if (!fs.statSync(specDir).isDirectory()) continue;
+              for (const f of fs.readdirSync(specDir)) {
+                if (f.toLowerCase().endsWith('.png')) {
+                  files.push({ spec, name: f, rel: `${runDir}/${spec}/${encodeURIComponent(f)}` });
+                }
+              }
+            }
+            files.sort((a, b) => a.name.localeCompare(b.name));
+            const { owner, repo } = context.repo;
+            const rawBase = `https://github.com/${owner}/${repo}/raw/${branch}`;
+
+            const groups = {};
+            files.forEach(f => { (groups[f.spec] = groups[f.spec] || []).push(f); });
+
+            const lines = ['## 🎞️ Visual catalog', ''];
+            for (const [spec, items] of Object.entries(groups)) {
+              lines.push(`### \`${spec}\``);
+              lines.push('');
+              lines.push('<table><tr>');
+              items.forEach((it, i) => {
+                lines.push(`<td align="center" valign="top" width="33%"><sub><b>${it.name.replace(/\.png$/i, '')}</b></sub><br><img src="${rawBase}/${it.rel}" width="220" alt="${it.name}" /></td>`);
+                if ((i + 1) % 3 === 0 && i < items.length - 1) lines.push('</tr><tr>');
+              });
+              lines.push('</tr></table>');
+              lines.push('');
+            }
+            lines.push(`_${files.length} screenshots from run #${context.runNumber}. Source: [${branch}](https://github.com/${owner}/${repo}/tree/${branch}/${runDir})._`);
+            lines.push('<!-- screenshot-catalog -->');
+
+            const body = lines.join('\n');
+            const issue_number = context.issue.number;
+            const list = await github.rest.issues.listComments({ owner, repo, issue_number });
+            const existing = list.data.find(c => c.body && c.body.includes('<!-- screenshot-catalog -->'));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+  smoke:
+    name: Server smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
       - name: Verify server starts
         run: |
           node server.js &
