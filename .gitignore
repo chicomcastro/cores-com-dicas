@@ -2,3 +2,7 @@ node_modules/
 .DS_Store
 *.log
 .env
+coverage/
+cypress/screenshots/
+cypress/videos/
+cypress/downloads/

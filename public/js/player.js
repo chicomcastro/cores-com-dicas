@@ -205,6 +205,7 @@
     sessionStorage.setItem('ccd:name', name);
     loginStatus.textContent = '';
     joinBtn.disabled = false;
+    updateGreeting();
     if (myRoom && state) {
       joinAttempted = false;
       socket.emit('join', { playerName: name, room: myRoom });

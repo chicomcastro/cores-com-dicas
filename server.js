@@ -16,8 +16,10 @@ const BUILD = Date.now().toString(36);
 const fs = require('fs');
 
 /* ---------- FIRESTORE (optional) ---------- */
+/* istanbul ignore next */
 let db = null;
 const FIRESTORE_PROJECT = process.env.FIRESTORE_PROJECT || null;
+/* istanbul ignore if */
 if (FIRESTORE_PROJECT) {
   try {
     const { Firestore } = require('@google-cloud/firestore');
@@ -30,6 +32,7 @@ if (FIRESTORE_PROJECT) {
 
 const ROOMS_COLLECTION = 'rooms';
 const debounceTimers = new Map();
+/* istanbul ignore next */
 function persistRoom(code) {
   if (!db) return;
   if (debounceTimers.has(code)) clearTimeout(debounceTimers.get(code));
@@ -51,6 +54,7 @@ function persistRoom(code) {
   }, 500));
 }
 
+/* istanbul ignore next */
 async function loadRoomsFromFirestore() {
   if (!db) return;
   try {
@@ -226,26 +230,30 @@ function socketRoom(socket) {
   return socket._roomCode || null;
 }
 
-function getRoomForSocket(socket) {
-  const code = socketRoom(socket);
-  return code ? getRoom(code) : null;
-}
-
 /* ---------- ROOM CLEANUP ---------- */
 const ROOM_TTL = 60 * 60 * 1000;
-setInterval(() => {
-  const now = Date.now();
+let cleanupInterval = null;
+function expireOldRooms(now) {
+  now = now || Date.now();
   for (const [code, room] of rooms) {
     if (room._createdAt && now - room._createdAt > ROOM_TTL) {
       io.to(code).emit('room_expired');
       rooms.delete(code);
+      /* istanbul ignore next */
       if (db) {
         db.collection(ROOMS_COLLECTION).doc(code).delete().catch(() => {});
       }
       console.log(`[Room] Expired room ${code} (>1h)`);
     }
   }
-}, 5 * 60 * 1000);
+}
+function startRoomCleanup() {
+  if (cleanupInterval) return;
+  cleanupInterval = setInterval(expireOldRooms, 5 * 60 * 1000);
+}
+function stopRoomCleanup() {
+  if (cleanupInterval) { clearInterval(cleanupInterval); cleanupInterval = null; }
+}
 
 /* ---------- GAME LOGIC ---------- */
 function publicState(room, code) {
@@ -720,20 +728,45 @@ io.on('connection', (socket) => {
 });
 
 /* ---------- START ---------- */
-async function start() {
+async function start(opts) {
+  const port = (opts && opts.port != null) ? opts.port : PORT;
   await loadRoomsFromFirestore();
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log('-----------------------------------------');
-    console.log(' Cores com Dicas');
-    if (BASE_URL) {
-      console.log(`  URL: ${BASE_URL}`);
-    } else {
-      console.log(`  Tabuleiro:  http://${LOCAL_IP}:${PORT}/board`);
-      console.log(`  Jogador:    http://${LOCAL_IP}:${PORT}/player`);
-    }
-    console.log(`  Rooms: ${rooms.size} restored`);
-    console.log('-----------------------------------------');
+  startRoomCleanup();
+  return new Promise(resolve => {
+    server.listen(port, '0.0.0.0', () => {
+      const addr = server.address();
+      const actualPort = addr && addr.port;
+      /* istanbul ignore if */
+      if (!opts || !opts.silent) {
+        console.log('-----------------------------------------');
+        console.log(' Cores com Dicas');
+        if (BASE_URL) {
+          console.log(`  URL: ${BASE_URL}`);
+        } else {
+          console.log(`  Tabuleiro:  http://${LOCAL_IP}:${actualPort}/board`);
+          console.log(`  Jogador:    http://${LOCAL_IP}:${actualPort}/player`);
+        }
+        console.log(`  Rooms: ${rooms.size} restored`);
+        console.log('-----------------------------------------');
+      }
+      resolve({ port: actualPort, server, io });
+    });
   });
 }
 
-start();
+async function stop() {
+  stopRoomCleanup();
+  io.disconnectSockets(true);
+  await new Promise(resolve => server.close(() => resolve()));
+}
+
+function resetRooms() {
+  rooms.clear();
+}
+
+/* istanbul ignore if */
+if (require.main === module) {
+  start();
+}
+
+module.exports = { start, stop, resetRooms, rooms, io, expireOldRooms };
