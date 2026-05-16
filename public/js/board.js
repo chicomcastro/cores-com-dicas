@@ -1,12 +1,8 @@
 (function () {
   const socket = io();
-  const { generateBoard, cellHsl, chebyshev } = window.GameColors;
+  const G = window.GameColors;
 
-  let cells = [];
-  let currentCols = 0;
-  let currentRows = 0;
   let state = null;
-  let cellEls = [];
   let placingPlayerName = null;
   let placingChoice = null;
   let pendingSelect = null;
@@ -256,108 +252,89 @@
     });
   }
 
-  /* ---------- BOARD GRID ---------- */
-  const boardGrid = $('board-grid');
-  const colLabelsEl = $('board-col-labels');
-  const rowLabelsEl = $('board-row-labels');
-  function buildBoard() {
-    const cols = state ? state.boardCols : 30;
-    const rows = state ? state.boardRows : 18;
-    cells = generateBoard(cols, rows);
-    currentCols = cols;
-    currentRows = rows;
-    boardGrid.innerHTML = '';
-    boardGrid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    boardGrid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-    cellEls = [];
-    cells.forEach((c) => {
-      const div = document.createElement('div');
-      div.className = 'cell';
-      div.style.background = cellHsl(c);
-      div.dataset.col = c.col;
-      div.dataset.row = c.row;
-      div.dataset.id = c.id;
-      div.addEventListener('click', () => onCellClick(c));
-      boardGrid.appendChild(div);
-      cellEls.push(div);
+  /* ---------- BOARD VIEW (spectator) ---------- */
+  const boardHost = $('board-view-host');
+  let boardView = null;
+
+  function ensureBoardView() {
+    if (boardView) return boardView;
+    if (!state) return null;
+    boardHost.innerHTML = '';
+    boardView = window.createBoardView(boardHost, {
+      cols: state.boardCols,
+      rows: state.boardRows,
+      players: state.players,
+      mode: 'view',
+      zoomable: true,
+      showLabels: true,
     });
+    boardView.on('cellTap', onBoardCellTap);
+    return boardView;
+  }
 
-    colLabelsEl.innerHTML = '';
-    colLabelsEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    for (let i = 0; i < cols; i++) {
-      const s = document.createElement('span');
-      s.textContent = colLabel(i);
-      colLabelsEl.appendChild(s);
+  function applyBoardForState() {
+    if (!state) return;
+    const b = ensureBoardView();
+    if (!b) return;
+    const phase = state.phase;
+    const inMarkers = phase === 'markers1' || phase === 'markers2';
+    const nextPending = (state.pendingMarkers || [])[0];
+
+    let secretCell = null;
+    let scoreZones = false;
+    if (phase === 'reveal' && state.revealCell) {
+      secretCell = { col: state.revealCell.col, row: state.revealCell.row };
+      scoreZones = true;
     }
-    rowLabelsEl.innerHTML = '';
-    rowLabelsEl.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-    for (let i = 0; i < rows; i++) {
-      const s = document.createElement('span');
-      s.textContent = rowLabel(i);
-      rowLabelsEl.appendChild(s);
-    }
+
+    let mode = 'view';
+    if (inMarkers && nextPending) mode = 'mark';
+
+    const nextPlayer = state.players.find(p => p.name === nextPending);
+    const selfColor = nextPlayer?.color || '#ffffff';
+
+    b.update({
+      cols: state.boardCols,
+      rows: state.boardRows,
+      players: state.players,
+      markers: state.markers || {},
+      secretCell,
+      secretObscured: false,
+      scoreZones,
+      showDistanceBadges: false,
+      pendingPick: pendingSelect,
+      selfColor,
+      mode,
+    });
   }
 
-  function cellEl(col, row) {
-    return cellEls[row * currentCols + col];
-  }
-
-  function clearPendingSelect() {
-    if (pendingSelect) {
-      const el = cellEl(pendingSelect.col, pendingSelect.row);
-      if (el) {
-        el.classList.remove('pending-select');
-        el.style.removeProperty('--player-color');
-        el.style.removeProperty('--player-glow');
-      }
-      pendingSelect = null;
-    }
-  }
-
-  function highlightPendingSelect(c) {
-    clearPendingSelect();
-    const el = cellEl(c.col, c.row);
-    if (!el) return;
-    const next = (state.pendingMarkers || [])[0];
-    const player = state.players.find(p => p.name === next);
-    const color = player?.color || '#ffffff';
-    el.style.setProperty('--player-color', color);
-    el.style.setProperty('--player-glow', hexToRgba(color, 0.55));
-    el.classList.add('pending-select');
-    pendingSelect = { col: c.col, row: c.row };
-  }
-
-  function hexToRgba(hex, alpha) {
-    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
-    if (!m) return `rgba(255,255,255,${alpha})`;
-    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
-    return `rgba(${r},${g},${b},${alpha})`;
-  }
-
-  function onCellClick(c) {
+  function onBoardCellTap(col, row) {
     if (!state) return;
     if (state.phase !== 'markers1' && state.phase !== 'markers2') return;
     const next = (state.pendingMarkers || [])[0];
     if (!next) return;
 
-    if (pendingSelect && pendingSelect.col === c.col && pendingSelect.row === c.row) {
+    if (pendingSelect && pendingSelect.col === col && pendingSelect.row === row) {
       const markerIndex = state.phase === 'markers1' ? 1 : 2;
-      socket.emit('place_marker', {
-        playerName: next,
-        col: c.col,
-        row: c.row,
-        markerIndex
-      });
-      clearPendingSelect();
+      socket.emit('place_marker', { playerName: next, col, row, markerIndex });
+      pendingSelect = null;
+      applyBoardForState();
       beep(720, 90, 'sine', 0.06);
       return;
     }
-    highlightPendingSelect(c);
+    pendingSelect = { col, row };
+    applyBoardForState();
     const round = state.phase === 'markers1' ? 1 : 2;
     placingHintEl.textContent = round === 1
       ? 'Toque novamente para confirmar.'
       : 'Confirme a seleção do segundo marcador.';
     beep(440, 50, 'sine', 0.04);
+  }
+
+  function clearPendingSelect() {
+    if (!pendingSelect) return;
+    pendingSelect = null;
+    applyBoardForState();
   }
 
   const placingChoiceEl = document.getElementById('placing-choice');
@@ -389,54 +366,7 @@
   const playAgainBtn = $('play-again-btn');
 
   function renderMarkers() {
-    cellEls.forEach(el => {
-      el.querySelectorAll('.marker').forEach(m => m.remove());
-      el.classList.remove('secret-reveal', 'score-3x3', 'score-5x5', 'revealed');
-    });
-    if (!state) return;
-    if (pendingSelect) {
-      const el = cellEl(pendingSelect.col, pendingSelect.row);
-      const validPhase = state.phase === 'markers1' || state.phase === 'markers2';
-      if (el && validPhase && (state.pendingMarkers || []).length > 0) {
-        el.classList.add('pending-select');
-      } else {
-        clearPendingSelect();
-      }
-    }
-    Object.entries(state.markers || {}).forEach(([name, mks]) => {
-      const player = state.players.find(p => p.name === name);
-      if (!player) return;
-      [1, 2].forEach(idx => {
-        const m = mks[idx];
-        if (!m) return;
-        const el = cellEl(m.col, m.row);
-        if (!el) return;
-        const dot = document.createElement('div');
-        dot.className = 'marker' + (idx === 2 ? ' m2' : '');
-        dot.style.background = player.color;
-        dot.title = `${name} (${idx})`;
-        dot.textContent = name.charAt(0).toUpperCase();
-        el.appendChild(dot);
-      });
-    });
-
-    if (state.revealCell) {
-      const el = cellEl(state.revealCell.col, state.revealCell.row);
-      if (el) el.classList.add('secret-reveal');
-      for (let dr = -2; dr <= 2; dr++) {
-        for (let dc = -2; dc <= 2; dc++) {
-          const c = ((state.revealCell.col + dc) % currentCols + currentCols) % currentCols;
-          const r = state.revealCell.row + dr;
-          const e = cellEl(c, r);
-          if (!e) continue;
-          const d = Math.max(Math.abs(dc), Math.abs(dr));
-          if (d === 0) continue;
-          if (d <= 1) e.classList.add('score-3x3');
-          else e.classList.add('score-5x5');
-        }
-      }
-      cellEls.forEach(e => e.classList.add('revealed'));
-    }
+    applyBoardForState();
   }
 
   function renderPhase() {
@@ -698,11 +628,13 @@
       return;
     }
     if (s.status === 'playing') {
-      if (boardGrid.children.length === 0 || currentCols !== s.boardCols || currentRows !== s.boardRows) buildBoard();
+      if (boardView && (boardView.getState().cols !== s.boardCols || boardView.getState().rows !== s.boardRows)) {
+        boardView = null; boardHost.innerHTML = '';
+      }
       showScreen('game');
       stopConfetti();
       renderPhase();
-      renderMarkers();
+      applyBoardForState();
       renderScoreboard();
 
       if (s.phase !== prevPhase || s.activeName !== prevActive) {
