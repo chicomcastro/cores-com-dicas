@@ -82,17 +82,39 @@
 
     <!-- WAITING (lobby joined) -->
     <section id="waiting" class="screen">
-      <div class="center-card lobby-card">
-        <div class="lobby-room-header">
+      <div class="lobby-card">
+        <h1 class="lobby-title">Cores com Dicas</h1>
+
+        <div class="lobby-room-hero">
           <span class="lobby-room-label">Sala</span>
-          <span class="lobby-room-value" id="lobby-room-code">—</span>
-          <button id="lobby-copy-code" class="copy-btn" title="Copiar código">📋</button>
+          <div class="lobby-room-value" id="lobby-room-code">—</div>
+          <button id="lobby-share-btn" class="primary lobby-share-btn">
+            <span class="share-icon">📤</span>
+            <span class="share-text">Compartilhar Sala</span>
+          </button>
+          <button id="lobby-qr-toggle" class="qr-toggle" aria-expanded="false">
+            <span class="qr-chevron">▸</span>
+            <span class="qr-toggle-text">Mostrar QR Code</span>
+          </button>
+          <div id="lobby-qr-wrap" class="lobby-qr-wrap hidden">
+            <img id="lobby-qr-img" alt="QR Code da sala" />
+            <p id="lobby-qr-url" class="qr-url"></p>
+          </div>
         </div>
+
         <div class="lobby-name-row">
           <h2 id="waiting-title">Olá, <span id="waiting-name">jogador</span>!</h2>
           <button id="edit-name-btn" class="edit-btn-inline">Editar</button>
         </div>
-        <div class="lobby-player-list" id="lobby-player-list"></div>
+
+        <div class="lobby-players-section">
+          <div class="lobby-players-header">
+            <span class="lobby-players-label">Jogadores</span>
+            <span id="lobby-players-count" class="lobby-players-count">0/10</span>
+          </div>
+          <div class="lobby-player-list" id="lobby-player-list"></div>
+        </div>
+
         <button id="lobby-start-btn" class="primary big" disabled>Iniciar Jogo</button>
         <p id="lobby-help" class="hint"></p>
         <button id="lobby-leave-btn" class="secondary">Sair da Sala</button>
@@ -199,6 +221,9 @@
         <div class="color-reveal-id" id="color-reveal-id">—</div>
       </div>
     </div>
+
+    <!-- TOASTS -->
+    <div id="toasts" class="toasts"></div>
 
     <!-- EXIT BUTTON -->
     <button id="exit-room-btn" class="exit-room-btn hidden" title="Sair da sala">✕</button>
