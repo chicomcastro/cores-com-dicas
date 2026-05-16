@@ -222,19 +222,92 @@
     showScreen('login');
   });
 
-  function copyToClipboard(text, btn) {
-    const done = () => { btn.textContent = '✓'; setTimeout(() => { btn.textContent = '📋'; }, 1500); };
-    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(fallback);
-    else fallback();
-    function fallback() {
-      const ta = document.createElement('textarea');
-      ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
-      document.body.appendChild(ta); ta.select();
-      try { document.execCommand('copy'); done(); } catch (e) {}
-      ta.remove();
+  /* ---------- TOAST ---------- */
+  function showToast(text, ms) {
+    const tEl = document.createElement('div');
+    tEl.className = 'toast';
+    tEl.textContent = text;
+    $('toasts').appendChild(tEl);
+    requestAnimationFrame(() => tEl.classList.add('show'));
+    setTimeout(() => {
+      tEl.classList.remove('show');
+      setTimeout(() => tEl.remove(), 250);
+    }, ms || 1800);
+  }
+
+  function copyToClipboard(text) {
+    return new Promise((resolve, reject) => {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(resolve).catch(() => fallback().then(resolve, reject));
+      } else {
+        fallback().then(resolve, reject);
+      }
+      function fallback() {
+        return new Promise((res, rej) => {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+            document.body.appendChild(ta); ta.select();
+            const ok = document.execCommand('copy');
+            ta.remove();
+            ok ? res() : rej(new Error('copy failed'));
+          } catch (e) { rej(e); }
+        });
+      }
+    });
+  }
+
+  /* ---------- SHARE ---------- */
+  function roomShareUrl() {
+    return `${window.location.origin}/player?room=${encodeURIComponent(myRoom || '')}`;
+  }
+  function shareRoom() {
+    if (!myRoom) return;
+    const url = roomShareUrl();
+    const shareData = {
+      title: 'Cores com Dicas',
+      text: `Vem jogar Cores com Dicas comigo! Sala ${myRoom}`,
+      url,
+    };
+    if (navigator.share && navigator.canShare?.(shareData) !== false) {
+      navigator.share(shareData).catch(err => {
+        if (err && err.name === 'AbortError') return;
+        copyToClipboard(url).then(() => showToast('Link copiado!')).catch(() => {});
+      });
+    } else {
+      copyToClipboard(url).then(() => showToast('Link copiado!')).catch(() => showToast('Falha ao copiar.'));
     }
   }
-  $('lobby-copy-code').addEventListener('click', () => copyToClipboard(myRoom || '', $('lobby-copy-code')));
+  $('lobby-share-btn').addEventListener('click', shareRoom);
+
+  /* ---------- QR TOGGLE ---------- */
+  let lobbyQrLoaded = false;
+  $('lobby-qr-toggle').addEventListener('click', () => {
+    const wrap = $('lobby-qr-wrap');
+    const toggle = $('lobby-qr-toggle');
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    if (expanded) {
+      wrap.classList.add('hidden');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.querySelector('.qr-toggle-text').textContent = 'Mostrar QR Code';
+    } else {
+      wrap.classList.remove('hidden');
+      toggle.setAttribute('aria-expanded', 'true');
+      toggle.querySelector('.qr-toggle-text').textContent = 'Esconder QR Code';
+      if (!lobbyQrLoaded && myRoom) loadLobbyQr();
+    }
+  });
+  function loadLobbyQr() {
+    if (!myRoom) return;
+    fetch(`/qr?room=${encodeURIComponent(myRoom)}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.qr) $('lobby-qr-img').src = d.qr;
+        if (d.url) $('lobby-qr-url').textContent = d.url;
+        lobbyQrLoaded = true;
+      })
+      .catch(() => {});
+  }
 
   $('lobby-start-btn').addEventListener('click', () => {
     const preset = GRID_PRESETS[selectedPreset];
@@ -261,20 +334,44 @@
 
   socket.on('start_rejected', (d) => { $('lobby-help').textContent = d?.reason || 'Não foi possível iniciar.'; });
 
+  let lobbyRoomShown = null;
   function renderWaiting() {
     $('waiting-name').textContent = myName || '';
     $('lobby-room-code').textContent = myRoom || '—';
+
+    // reset QR if room changed
+    if (lobbyRoomShown !== myRoom) {
+      lobbyRoomShown = myRoom;
+      lobbyQrLoaded = false;
+      $('lobby-qr-img').removeAttribute('src');
+      $('lobby-qr-url').textContent = '';
+      $('lobby-qr-wrap').classList.add('hidden');
+      const toggle = $('lobby-qr-toggle');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.querySelector('.qr-toggle-text').textContent = 'Mostrar QR Code';
+    }
+
     const listEl = $('lobby-player-list');
     listEl.innerHTML = '';
     const conn = state?.lobbyConnected || {};
-    (state?.lobbyPlayers || []).forEach(name => {
+    const names = state?.lobbyPlayers || [];
+    names.forEach(name => {
       const isConnected = !!conn[name];
+      const isMe = name === myName;
+      const initial = (name.charAt(0) || '?').toUpperCase();
       const div = document.createElement('div');
-      div.className = 'lobby-player-item' + (isConnected ? ' connected' : '');
-      div.innerHTML = `<span class="player-name">${escapeHtml(name)}</span><span class="conn-dot ${isConnected ? 'on' : ''}"></span>`;
+      div.className = 'lobby-player-item' + (isMe ? ' me' : '') + (isConnected ? '' : ' disconnected');
+      div.innerHTML = `
+        <span class="player-avatar">${escapeHtml(initial)}</span>
+        <span class="player-name">${escapeHtml(name)}</span>
+        ${isMe ? '<span class="you-pill">você</span>' : ''}
+        <span class="conn-dot ${isConnected ? 'on' : ''}" title="${isConnected ? 'Conectado' : 'Desconectado'}"></span>
+      `;
       listEl.appendChild(div);
     });
-    const names = state?.lobbyPlayers || [];
+
+    $('lobby-players-count').textContent = `${names.length}/10`;
+
     const enough = names.length >= 2 && names.length <= 10;
     $('lobby-start-btn').disabled = !enough;
     const help = $('lobby-help');
