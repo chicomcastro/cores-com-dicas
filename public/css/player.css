@@ -347,8 +347,8 @@ button, input { font-family: inherit; }
   flex: 0 0 30dvh;
   min-height: 180px;
   position: relative;
-  padding: 8px 12px 4px;
-  padding-top: max(env(safe-area-inset-top, 8px), 8px);
+  padding: 16px 12px 14px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 16px);
 }
 
 .game-content {
@@ -356,6 +356,7 @@ button, input { font-family: inherit; }
   display: flex; flex-direction: column;
   min-height: 0;
   position: relative;
+  padding-top: 4px;
   padding-bottom: 84px; /* room for mini-rank */
 }
 
@@ -365,7 +366,7 @@ button, input { font-family: inherit; }
   flex: 1;
   min-height: 0;
   width: 100%;
-  padding: 8px 16px env(safe-area-inset-bottom, 12px);
+  padding: 16px 16px env(safe-area-inset-bottom, 12px);
   animation: contentFade 0.25s ease;
 }
 .game-screen.active { display: flex; }
