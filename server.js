@@ -199,9 +199,14 @@ function freshState() {
     lastClueGiver: null,
     roundScores: null,
     revealCell: null,
-    finalScores: null
+    finalScores: null,
+    timerSeconds: 60,
+    phaseDeadline: null,
+    turnExtended: false,
   };
 }
+
+const ALLOWED_TIMER_SECONDS = [0, 30, 60, 90];
 
 function createRoom(opts = {}) {
   const code = generateCode();
@@ -211,6 +216,9 @@ function createRoom(opts = {}) {
     state.gridCols = GRID_PRESETS[opts.gridSize].cols;
     state.gridRows = GRID_PRESETS[opts.gridSize].rows;
   }
+  if (typeof opts.timerSeconds === 'number' && ALLOWED_TIMER_SECONDS.includes(opts.timerSeconds)) {
+    state.timerSeconds = opts.timerSeconds;
+  }
   const board = colors.generateBoard(state.gridCols, state.gridRows);
   rooms.set(code, {
     state,
@@ -218,6 +226,7 @@ function createRoom(opts = {}) {
     board,
     cellById: new Map(board.map(c => [c.id, c])),
     _createdAt: Date.now(),
+    _phaseTimer: null,
   });
   return code;
 }
@@ -237,6 +246,7 @@ function expireOldRooms(now) {
   now = now || Date.now();
   for (const [code, room] of rooms) {
     if (room._createdAt && now - room._createdAt > ROOM_TTL) {
+      clearPhaseTimer(room);
       io.to(code).emit('room_expired');
       rooms.delete(code);
       /* istanbul ignore next */
@@ -291,7 +301,10 @@ function publicState(room, code) {
     finalScores: state.finalScores,
     boardCols: state.gridCols,
     boardRows: state.gridRows,
-    hasPassword: !!state.password
+    hasPassword: !!state.password,
+    timerSeconds: state.timerSeconds || 0,
+    phaseDeadline: state.phaseDeadline || null,
+    turnExtended: !!state.turnExtended,
   };
 }
 
@@ -317,6 +330,62 @@ function sendSecretToActive(room) {
   });
 }
 
+/* ---------- PHASE TIMER ---------- */
+function clearPhaseTimer(room) {
+  if (room && room._phaseTimer) {
+    clearTimeout(room._phaseTimer);
+    room._phaseTimer = null;
+  }
+  if (room && room.state) room.state.phaseDeadline = null;
+}
+
+function schedulePhaseTimer(room, code) {
+  clearPhaseTimer(room);
+  const state = room.state;
+  if (!state.timerSeconds || state.timerSeconds <= 0) return;
+  if (state.status !== 'playing') return;
+  if (!['clue1', 'clue2', 'markers1', 'markers2', 'reveal'].includes(state.phase)) return;
+  const ms = state.timerSeconds * 1000;
+  state.phaseDeadline = Date.now() + ms;
+  room._phaseTimer = setTimeout(() => onPhaseTimerExpire(room, code), ms);
+}
+
+function onPhaseTimerExpire(room, code) {
+  const state = room.state;
+  if (!state || state.status !== 'playing') return;
+  switch (state.phase) {
+    case 'clue1':
+      state.clue1 = null;
+      state.phase = 'markers1';
+      state.pendingMarkers = state.players.filter((_, i) => i !== state.activeIdx).map(p => p.name);
+      schedulePhaseTimer(room, code);
+      broadcast(room, code);
+      break;
+    case 'clue2':
+      state.clue2 = null;
+      state.phase = 'markers2';
+      state.pendingMarkers = state.players.filter((_, i) => i !== state.activeIdx).map(p => p.name);
+      schedulePhaseTimer(room, code);
+      broadcast(room, code);
+      break;
+    case 'markers1':
+    case 'markers2': {
+      const next = state.pendingMarkers[0];
+      if (!next) { schedulePhaseTimer(room, code); break; }
+      const col = Math.floor(Math.random() * state.gridCols);
+      const row = Math.floor(Math.random() * state.gridRows);
+      placeMarker(room, code, {
+        playerName: next, col, row,
+        markerIndex: state.phase === 'markers1' ? 1 : 2,
+      });
+      break;
+    }
+    case 'reveal':
+      nextTurn(room, code);
+      break;
+  }
+}
+
 function startTurn(room, code) {
   const state = room.state;
   const cell = room.board[Math.floor(Math.random() * room.board.length)];
@@ -329,6 +398,8 @@ function startTurn(room, code) {
   state.revealCell = null;
   state.phase = 'clue1';
   state.currentRound = Math.floor(state.turnsTaken / Math.max(1, state.players.length)) + 1;
+  state.turnExtended = false;
+  schedulePhaseTimer(room, code);
   broadcast(room, code);
 }
 
@@ -358,6 +429,8 @@ function startGame(room, code, playerNames, cols, rows) {
   const newState = freshState();
   newState.gridCols = preset.cols;
   newState.gridRows = preset.rows;
+  newState.timerSeconds = state.timerSeconds;
+  newState.password = state.password;
   newState.status = 'playing';
   newState.lobbyPlayers = shuffled;
   newState.players = shuffled.map((name, i) => ({
@@ -389,6 +462,7 @@ function submitClue(room, code, socket, payload) {
       state.clue1 = null;
       state.phase = 'markers1';
       state.pendingMarkers = state.players.filter((_, i) => i !== state.activeIdx).map(p => p.name);
+      schedulePhaseTimer(room, code);
       broadcast(room, code);
       return;
     }
@@ -407,6 +481,7 @@ function submitClue(room, code, socket, payload) {
       state.clue2 = null;
       state.phase = 'markers2';
       state.pendingMarkers = state.players.filter((_, i) => i !== state.activeIdx).map(p => p.name);
+      schedulePhaseTimer(room, code);
       broadcast(room, code);
       return;
     }
@@ -452,6 +527,7 @@ function placeMarker(room, code, payload) {
       return;
     }
   }
+  schedulePhaseTimer(room, code);
   broadcast(room, code);
 }
 
@@ -493,6 +569,7 @@ function doReveal(room, code) {
     scores: roundScores,
     totals: state.players.map(p => ({ name: p.name, score: p.score }))
   });
+  schedulePhaseTimer(room, code);
   broadcast(room, code);
 }
 
@@ -511,6 +588,7 @@ function nextTurn(room, code) {
         if (b.name === state.lastClueGiver) return 1;
         return 0;
       });
+    clearPhaseTimer(room);
     io.to(`room:${code}`).emit('game_over', { finalScores: state.finalScores });
     broadcast(room, code);
     return;
@@ -524,8 +602,11 @@ function resetGame(room, code) {
   const previousNames = state.lobbyPlayers && state.lobbyPlayers.length
     ? state.lobbyPlayers
     : state.players.map(p => p.name);
+  const prevTimer = state.timerSeconds;
+  clearPhaseTimer(room);
   room.state = freshState();
   room.state.lobbyPlayers = previousNames;
+  room.state.timerSeconds = prevTimer;
   broadcast(room, code);
 }
 
@@ -634,6 +715,7 @@ io.on('connection', (socket) => {
     const code = socketRoom(socket);
     const room = code && getRoom(code);
     if (!room || room.state.status !== 'lobby') return;
+    let dirty = false;
     if (payload && typeof payload.cols === 'number' && typeof payload.rows === 'number') {
       const preset = GRID_PRESETS.find(p => p.cols === payload.cols && p.rows === payload.rows);
       if (preset) {
@@ -641,9 +723,31 @@ io.on('connection', (socket) => {
         room.state.gridRows = preset.rows;
         room.board = colors.generateBoard(preset.cols, preset.rows);
         room.cellById = new Map(room.board.map(c => [c.id, c]));
-        broadcast(room, code);
+        dirty = true;
       }
     }
+    if (payload && typeof payload.timerSeconds === 'number' && ALLOWED_TIMER_SECONDS.includes(payload.timerSeconds)) {
+      room.state.timerSeconds = payload.timerSeconds;
+      dirty = true;
+    }
+    if (dirty) broadcast(room, code);
+  });
+
+  socket.on('extend_timer', () => {
+    const code = socketRoom(socket);
+    const room = code && getRoom(code);
+    if (!room) return;
+    const state = room.state;
+    if (state.status !== 'playing') return;
+    if (!state.phaseDeadline) return;
+    if (state.turnExtended) return;
+    state.turnExtended = true;
+    const remaining = Math.max(0, state.phaseDeadline - Date.now());
+    const extraMs = 10000;
+    state.phaseDeadline = Date.now() + remaining + extraMs;
+    if (room._phaseTimer) clearTimeout(room._phaseTimer);
+    room._phaseTimer = setTimeout(() => onPhaseTimerExpire(room, code), remaining + extraMs);
+    broadcast(room, code);
   });
 
   socket.on('start_game', (payload) => {
@@ -756,11 +860,13 @@ async function start(opts) {
 
 async function stop() {
   stopRoomCleanup();
+  for (const room of rooms.values()) clearPhaseTimer(room);
   io.disconnectSockets(true);
   await new Promise(resolve => server.close(() => resolve()));
 }
 
 function resetRooms() {
+  for (const room of rooms.values()) clearPhaseTimer(room);
   rooms.clear();
 }
 
@@ -769,4 +875,13 @@ if (require.main === module) {
   start();
 }
 
-module.exports = { start, stop, resetRooms, rooms, io, expireOldRooms };
+module.exports = {
+  start, stop, resetRooms, rooms, io, expireOldRooms,
+  // exposed for tests
+  _triggerPhaseExpire: (code) => {
+    const room = rooms.get(code);
+    if (!room) return;
+    if (room._phaseTimer) { clearTimeout(room._phaseTimer); room._phaseTimer = null; }
+    onPhaseTimerExpire(room, code);
+  },
+};

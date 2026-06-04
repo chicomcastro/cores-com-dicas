@@ -718,3 +718,114 @@ button, input { font-family: inherit; }
 }
 #end #end-rank { margin: 4px 0 0; }
 #end-title { font-size: 36px; font-weight: 900; }
+
+/* ---------- TIMER RING ---------- */
+.timer-ring-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  justify-content: stretch;
+  isolation: isolate;
+}
+.timer-ring-wrap > * { position: relative; z-index: 2; }
+.timer-ring {
+  position: absolute;
+  /* exact pixel size and offset are set inline by createTimerRing(),
+     keyed to the wrapped element's box and computed border-radius */
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.timer-ring rect {
+  stroke: #a8d8a8;
+  transition: stroke 0.3s ease, stroke-width 0.3s ease;
+  filter: drop-shadow(0 0 4px rgba(168, 216, 168, 0.45));
+}
+.timer-ring-wrap.active .timer-ring { opacity: 1; }
+.timer-ring-wrap.warn .timer-ring rect {
+  stroke: #f7c97e;
+  filter: drop-shadow(0 0 5px rgba(247, 201, 126, 0.55));
+}
+.timer-ring-wrap.danger .timer-ring rect {
+  stroke: #f2a6b5;
+  filter: drop-shadow(0 0 6px rgba(242, 166, 181, 0.7));
+  animation: timerDanger 0.6s ease-in-out infinite alternate;
+}
+@keyframes timerDanger {
+  from { stroke-width: 2.5; }
+  to { stroke-width: 4; }
+}
+.timer-ring-wrap.about-to-expire {
+  animation: timerShake 0.35s ease-in-out infinite alternate;
+}
+@keyframes timerShake {
+  from { transform: translateX(-1px); }
+  to { transform: translateX(1px); }
+}
+
+.timer-ring-label {
+  position: absolute;
+  top: -8px; right: -8px;
+  z-index: 3;
+  background: #1a1520;
+  border: 1px solid #3a2e48;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 900;
+  color: #ede6f0;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.3s ease, border-color 0.3s ease;
+  pointer-events: none;
+}
+.timer-ring-wrap.active .timer-ring-label { opacity: 1; }
+.timer-ring-wrap.warn .timer-ring-label { color: #f7c97e; border-color: #5a4a30; }
+.timer-ring-wrap.danger .timer-ring-label { color: #f2a6b5; border-color: #5a3040; }
+
+/* Mini timer chip (passive observers see this in the mini-rank area) */
+.mini-timer-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(196, 167, 231, 0.12);
+  border: 1px solid #3a2e48;
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 11px; font-weight: 800;
+  color: #c4a7e7;
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
+}
+.mini-timer-chip.hidden { display: none; }
+.mini-timer-chip.warn { color: #f7c97e; }
+.mini-timer-chip.danger { color: #f2a6b5; animation: timerDanger 0.6s ease-in-out infinite alternate; }
+.mini-timer-chip .timer-icon { font-size: 10px; opacity: 0.85; }
+
+/* Lobby timer presets */
+.timer-options { display: flex; gap: 8px; flex-wrap: wrap; }
+.timer-options .grid-size-btn { min-width: 56px; }
+
+/* Extend button */
+.extend-timer-btn {
+  background: rgba(196,167,231,0.12);
+  border: 1px solid #3a2e48;
+  border-radius: 10px;
+  color: #c4a7e7;
+  font-size: 11px; font-weight: 800;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.extend-timer-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.extend-timer-btn:not(:disabled):hover {
+  background: rgba(196,167,231,0.22);
+}
+.extend-timer-btn.hidden { display: none; }
+
+.mini-rank-top { display: flex; align-items: center; gap: 4px; }

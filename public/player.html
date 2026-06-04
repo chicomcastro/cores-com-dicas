@@ -115,6 +115,13 @@
           <div class="lobby-player-list" id="lobby-player-list"></div>
         </div>
 
+        <div class="lobby-players-section">
+          <div class="lobby-players-header">
+            <span class="lobby-players-label">Timer por fase</span>
+          </div>
+          <div id="lobby-timer-options" class="timer-options"></div>
+        </div>
+
         <button id="lobby-start-btn" class="primary big" disabled>Iniciar Jogo</button>
         <p id="lobby-help" class="hint"></p>
         <button id="lobby-leave-btn" class="secondary">Sair da Sala</button>
@@ -230,10 +237,16 @@
 
     <!-- MINI RANKING -->
     <div id="mini-rank" class="mini-rank hidden">
-      <div id="mini-round-chip" class="mini-round-chip">
-        <span class="rc-label">R</span><span id="mini-round-cur">1</span>/<span id="mini-round-tot">2</span>
-        <span class="rc-sep">·</span>
-        <span class="rc-label">T</span><span id="mini-turn-cur">1</span>/<span id="mini-turn-tot">6</span>
+      <div class="mini-rank-top">
+        <div id="mini-round-chip" class="mini-round-chip">
+          <span class="rc-label">R</span><span id="mini-round-cur">1</span>/<span id="mini-round-tot">2</span>
+          <span class="rc-sep">·</span>
+          <span class="rc-label">T</span><span id="mini-turn-cur">1</span>/<span id="mini-turn-tot">6</span>
+        </div>
+        <span id="mini-timer-chip" class="mini-timer-chip hidden">
+          <span class="timer-icon">⏱</span><span id="mini-timer-value">0s</span>
+        </span>
+        <button id="extend-timer-btn" class="extend-timer-btn hidden" title="Adicionar 10s (1× por turno)">+10s</button>
       </div>
       <div class="mini-rank-row" id="mini-rank-row"></div>
     </div>
@@ -242,6 +255,7 @@
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/colors.js?v=__BUILD__"></script>
   <script src="/js/board-view.js?v=__BUILD__"></script>
+  <script src="/js/timer-ring.js?v=__BUILD__"></script>
   <script src="/js/player.js?v=__BUILD__"></script>
 </body>
 </html>
