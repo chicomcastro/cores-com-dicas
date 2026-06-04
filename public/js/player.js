@@ -124,6 +124,14 @@
   ];
   let selectedPreset = 1;
 
+  /* ---------- TIMER PRESETS ---------- */
+  const TIMER_PRESETS = [
+    { label: 'Sem timer', value: 0 },
+    { label: '30s', value: 30 },
+    { label: '60s', value: 60 },
+    { label: '90s', value: 90 },
+  ];
+
   function renderGridOptions(container, onSelect) {
     container.innerHTML = '';
     GRID_PRESETS.forEach((p, i) => {
@@ -372,12 +380,29 @@
     });
 
     $('lobby-players-count').textContent = `${names.length}/10`;
+    renderTimerOptions();
 
     const enough = names.length >= 2 && names.length <= 10;
     $('lobby-start-btn').disabled = !enough;
     const help = $('lobby-help');
     if (names.length < 2) help.textContent = `Faltam ${2 - names.length} jogador(es).`;
     else help.textContent = 'Pronto para iniciar!';
+  }
+
+  function renderTimerOptions() {
+    const host = $('lobby-timer-options');
+    if (!host) return;
+    const current = state?.timerSeconds ?? 60;
+    host.innerHTML = '';
+    TIMER_PRESETS.forEach((p) => {
+      const btn = document.createElement('button');
+      btn.className = 'grid-size-btn' + (p.value === current ? ' active' : '');
+      btn.textContent = p.label;
+      btn.addEventListener('click', () => {
+        socket.emit('update_room_settings', { timerSeconds: p.value });
+      });
+      host.appendChild(btn);
+    });
   }
 
   /* ---------- BOARD VIEW (one instance, persistent across game screens) ---------- */
@@ -780,6 +805,97 @@
     $('mini-turn-tot').textContent = state.totalTurns;
   }
 
+  /* ---------- TIMER (ring around the current action target + observer chip) ---------- */
+  const rings = {}; // map screen -> ring instance lazily created
+  let activeRingScope = null;
+  let timerChipRaf = null;
+
+  function getRing(scope) {
+    if (rings[scope]) return rings[scope];
+    let target = null;
+    if (scope === 'secret') target = $('clue-send');
+    else if (scope === 'wait-turn') target = $('wt-partial');
+    else if (scope === 'place-marker') target = $('pm-confirm');
+    else if (scope === 'reveal') target = $('next-round-btn');
+    if (!target || !window.createTimerRing) return null;
+    rings[scope] = window.createTimerRing(target);
+    return rings[scope];
+  }
+
+  function stopAllRings(except) {
+    Object.entries(rings).forEach(([scope, r]) => {
+      if (scope !== except) r.stop();
+    });
+  }
+
+  function pickRingScope() {
+    if (!state || state.status !== 'playing') return null;
+    if (!state.phaseDeadline) return null;
+    const isActive = state.activeName === myName;
+    const phase = state.phase;
+    if ((phase === 'clue1' || phase === 'clue2') && isActive) return 'secret';
+    if ((phase === 'markers1' || phase === 'markers2')) {
+      if (isActive) return 'wait-turn';
+      if ((state.pendingMarkers || []).includes(myName)) return 'place-marker';
+    }
+    if (phase === 'reveal' && isActive) return 'reveal';
+    return null;
+  }
+
+  function applyTimer() {
+    const chip = $('mini-timer-chip');
+    const value = $('mini-timer-value');
+    const extendBtn = $('extend-timer-btn');
+
+    if (!state || state.status !== 'playing' || !state.phaseDeadline) {
+      chip.classList.add('hidden');
+      extendBtn.classList.add('hidden');
+      stopAllRings();
+      activeRingScope = null;
+      if (timerChipRaf) cancelAnimationFrame(timerChipRaf);
+      return;
+    }
+
+    // Observer chip: anyone sees the seconds left
+    chip.classList.remove('hidden');
+    function tickChip() {
+      const remaining = state.phaseDeadline - Date.now();
+      const secLeft = Math.max(0, Math.ceil(remaining / 1000));
+      const ratio = remaining / (state.timerSeconds * 1000);
+      value.textContent = `${secLeft}s`;
+      chip.classList.toggle('warn', ratio < 0.5 && ratio >= 0.2);
+      chip.classList.toggle('danger', ratio < 0.2);
+      if (remaining > 0) timerChipRaf = requestAnimationFrame(tickChip);
+    }
+    if (timerChipRaf) cancelAnimationFrame(timerChipRaf);
+    tickChip();
+
+    // Extend button: visible while a timer is active and not yet used this turn
+    if (state.turnExtended) {
+      extendBtn.classList.add('hidden');
+    } else {
+      extendBtn.classList.remove('hidden');
+      extendBtn.disabled = false;
+    }
+
+    // Ring around the target element for whoever needs to act
+    const scope = pickRingScope();
+    if (scope !== activeRingScope) stopAllRings(scope);
+    activeRingScope = scope;
+    if (scope) {
+      const ring = getRing(scope);
+      if (ring) {
+        ring.start(state.phaseDeadline, state.timerSeconds, {});
+      }
+    }
+  }
+
+  $('extend-timer-btn').addEventListener('click', () => {
+    socket.emit('extend_timer');
+    $('extend-timer-btn').disabled = true;
+    vibrate(20);
+  });
+
   /* ---------- ROUTER ---------- */
   let prevPhase = null;
   let prevActive = null;
@@ -826,6 +942,7 @@
 
     renderMiniRank();
     applyBoardForState();
+    applyTimer();
 
     const myPending = (state.pendingMarkers || []).includes(myName);
     const turnChanged = prevActive !== state.activeName || prevPhase !== phase;
